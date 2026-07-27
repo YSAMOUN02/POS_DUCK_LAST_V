@@ -1,11 +1,14 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+{{-- See backend/master.blade.php: browser translation rewrites text nodes
+     underneath Livewire and its DOM morphing then drops the element. --}}
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" translate="no">
 
 <head>
     <meta charset="UTF-8">
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta name="google" content="notranslate">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css"
         integrity="sha512-DxV+EoADOkOygM4IR9yXP8Sb2qwgidEmeqAEmDKIOfPRQZOWbXCzLC6vjbZyy0vPisbH2SyW27+ddLVCN+OMzQ=="
         crossorigin="anonymous" referrerpolicy="no-referrer" />
@@ -191,7 +194,11 @@
             window.fetch = function (...args) {
                 activeRequests++;
                 document.body.style.cursor = 'progress';
-                return originalFetch.apply(this, args).finally(() => {
+                {{-- apply(window, …) not apply(this, …): a bare fetch() from any
+                     strict-mode caller (Livewire, a module) passes this ===
+                     undefined, and fetch rejects that with "Illegal
+                     invocation". --}}
+                return originalFetch.apply(window, args).finally(() => {
                     activeRequests = Math.max(0, activeRequests - 1);
                     if (activeRequests === 0) document.body.style.cursor = '';
                 });
@@ -200,7 +207,15 @@
 
         // in master layout <script>, next to user_role
         const user_id = @json(Auth::user()->id);
-        let pos_profile_for_print = @json($posInfoForPrint);
+
+        // Deliberately on window, not `let`. A top-level `let` lives in the
+        // script scope, which Livewire's navigate discards when it swaps the
+        // page — while script_purchase.js persists (data-navigate-once). The
+        // print handler then survived but its binding did not, and every GRN
+        // print died with "ReferenceError: pos_profile_for_print is not
+        // defined". A window property outlives the swap, and bare reads of
+        // `pos_profile_for_print` still resolve to it.
+        window.pos_profile_for_print = @json($posInfoForPrint);
         // ===== Resizable cart sidebar (saved per user) =====
         const resizer = document.getElementById('resizer');
         const sidebarEl = document.getElementById('sidebar');
@@ -266,11 +281,15 @@
     <script src="https://cdn.jsdelivr.net/npm/flowbite@4.0.1/dist/flowbite.min.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-    <script src="{{ asset('assets/js/script_purchase.js') }}"></script>
+    <script
+        src="{{ asset('assets/js/script_purchase.js') }}?v={{ filemtime(public_path('assets/js/script_purchase.js')) }}">
+    </script>
     <script
         src="{{ asset('assets/js/print_document_a4.js') }}?v={{ filemtime(public_path('assets/js/print_document_a4.js')) }}">
     </script>
-    <script src="{{ asset('assets/js/print_purchase.js') }}"></script>
+    <script
+        src="{{ asset('assets/js/print_purchase.js') }}?v={{ filemtime(public_path('assets/js/print_purchase.js')) }}">
+    </script>
 </body>
 
 </html>

@@ -1,10 +1,17 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+{{-- translate="no" keeps Edge/Chrome from offering to translate this page.
+     Machine translation rewrites the text nodes underneath Livewire, whose
+     DOM morphing then cannot match them and drops the element — which is how
+     cards vanished after the browser's language bar appeared. The UI is
+     already localised through app()->getLocale(), so there is nothing for a
+     browser translator to usefully add. --}}
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" translate="no">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <meta name="google" content="notranslate">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
     <link rel="stylesheet" href="{{ URL('assets/css/fonts6/css/all.css') }}">
@@ -238,21 +245,6 @@
                     </div>
                 </button>
             @endif
-            {{-- Change Log is deliberately admin-only, not a grantable permission
-                 (see PermissionSeeder notes) — stays a hard role check. --}}
-            <button id="change_log_data" data-modal-target="default-modal-change-log"
-                data-modal-toggle="default-modal-change-log"
-                class="{{ Auth::user()->role === 'admin' ? '' : 'hidden' }}">
-                <div
-                    class="h-full flex flex-col justify-center p-4 rounded-base cursor-pointer bg-neutral-secondary-medium border border-default-medium hover:bg-neutral-tertiary-medium">
-                    <div
-                        class="flex justify-center items-center p-2 mx-auto mb-2 bg-neutral-primary-strong border border-default-strong rounded-full w-12 h-12">
-                        <i class="fa-solid fa-clock-rotate-left"></i>
-                    </div>
-                    <div class="font-medium text-center text-body">{{ __('Change Log') }}
-                    </div>
-                </div>
-            </button>
             <button id="purchasing" class="{{ Auth::user()->hasPermission('purchasing.view') ? '' : 'hidden' }}">
                 <div
                     class="h-full flex flex-col justify-center p-4 rounded-base cursor-pointer bg-neutral-secondary-medium border border-default-medium hover:bg-neutral-tertiary-medium">
@@ -330,7 +322,13 @@
         const user_report = @json(Auth::user()->report);
         const user_id = @json(Auth::user()->id);
         const warehouse_ids = @json(Auth::user()->warehouses->pluck('id'));
-        let pos_profile_for_print = @json($posInfoForPrint);
+
+        // On window, not `let` — see backend/master_purchasing.blade.php: a
+        // top-level `let` is script-scoped and Livewire's navigate discards it
+        // on a page swap, while the persisted script files keep running and
+        // then cannot see it. script.js reassigns this after a profile save,
+        // which still works against a window property.
+        window.pos_profile_for_print = @json($posInfoForPrint);
 
         // ===== i18n bridge for strings built in JS =====
         // Blade's __() can't reach text that script.js generates at runtime, so
@@ -362,7 +360,11 @@
             window.fetch = function (...args) {
                 activeRequests++;
                 document.body.style.cursor = 'progress';
-                return originalFetch.apply(this, args).then((response) => {
+                {{-- apply(window, …) not apply(this, …): a bare fetch() from any
+                     strict-mode caller (Livewire, a module) passes this ===
+                     undefined, and fetch rejects that with "Illegal
+                     invocation". --}}
+                return originalFetch.apply(window, args).then((response) => {
                     if (response.status === 403 && typeof showToast === 'function') {
                         const now = Date.now();
                         if (now - lastPermissionToastAt > 1000) { // de-dupe bursts of parallel requests

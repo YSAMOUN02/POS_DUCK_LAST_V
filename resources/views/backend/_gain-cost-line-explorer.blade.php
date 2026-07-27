@@ -96,12 +96,19 @@ table.gcl-tbl{border-collapse:collapse;width:100%;min-width:1500px;}
 
     <div class="gcl-body">
       <table class="gcl-tbl">
+        @endverbatim
+        {{-- Header row is deliberately stepped outside the verbatim region that
+             wraps the rest of this file. That region exists so Blade leaves the
+             CSS keyframes rule alone, but it also stopped these __() calls from
+             running — the headers printed their own Blade source instead of the
+             translated labels. --}}
         <thead><tr>
           <th>{{ __('Doc No') }}</th><th>{{ __('Date') }}</th><th>{{ __('Payment') }}</th><th>{{ __('Cust. Type') }}</th><th>{{ __('Product') }}</th><th>{{ __('Variant') }}</th>
           <th class="r">{{ __('Qty') }}</th><th>{{ __('Unit') }}</th><th class="r">{{ __('Cost') }}</th><th class="r">{{ __('Sell') }}</th><th class="r">{{ __('Subtotal') }}</th>
           <th class="r">{{ __('Disc %') }}</th><th class="r">{{ __('Disc Amt') }}</th><th class="r">{{ __('VAT %') }}</th><th class="r">{{ __('VAT') }}</th>
           <th class="r">{{ __('Net') }}</th><th class="r">{{ __('Grand Total') }}</th>
         </tr></thead>
+        @verbatim
         <tbody id="gcl-tbody"></tbody>
       </table>
     </div>

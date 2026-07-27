@@ -2,15 +2,10 @@
 
 namespace App\Models;
 
-use App\Models\Concerns\LogsActivity;
 use Illuminate\Database\Eloquent\Model;
 
 class SaleOrderHeader extends Model
 {
-    use LogsActivity;
-
-    protected string $activitySection = 'pos_sale';
-
     protected $table = 'sale_order_headers';
     protected $fillable = [
         'document_no',

@@ -7,6 +7,7 @@ use App\Models\ItemLedgerEntry;
 use App\Models\Product;
 use App\Models\PurchaseHeader;
 use App\Models\PurchaseLine;
+use App\Models\Serial_No;
 use App\Models\UserWarehouse;
 use App\Models\Vendor;
 use App\Models\Warehouse;
@@ -379,6 +380,11 @@ class PurchaseCart extends Component
                     'factor'         => $riel->factor,
 
                     'unit_cost'           => $unitCost,
+                    // Goods receipt: this is what the stock is worth. The
+                    // line_amount/net_amount/grand_total_amount below still
+                    // carry the same figure negated, because GainCostController
+                    // derives purchase spend from that sign.
+                    'cost_amount'         => round(abs($qty) * abs($unitCost), 6),
                     'sell_price'          => $product->sell_price ?? 0,
                     'unit_price'          => $unitPrice,
 
@@ -443,22 +449,7 @@ class PurchaseCart extends Component
     }
     private function generateGrnNo()
     {
-        $year = now()->format('y'); // 24, 25, 26
-        $prefix = 'GRN' . $year . '-';
-
-        $lastGrn = PurchaseHeader::where('no', 'like', $prefix . '%')
-            ->orderByDesc('no')
-            ->lockForUpdate()
-            ->first();
-
-        if ($lastGrn) {
-            $lastNumber = (int) substr($lastGrn->no, -4);
-            $nextNumber = $lastNumber + 1;
-        } else {
-            $nextNumber = 1;
-        }
-
-        return $prefix . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+        return Serial_No::next('purchase');
     }
 
     public function generateLotNumber()

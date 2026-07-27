@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\AdminController;
-use App\Http\Controllers\ActivityLogController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\PermissionController;
 use App\Models\Currency;
@@ -56,8 +55,6 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/warehouse-list-data', [UserController::class, 'get_warehouse_list'])->middleware('permission:user.view');
     // Get Permissions for User
     Route::get('/permissions-list-data', [PermissionController::class, 'permissionListData'])->middleware('permission:user.view');
-    // Change Log (admin-only, hard-checked in the controller — no permission section)
-    Route::get('/change-log-data', [ActivityLogController::class, 'index']);
 
     Route::post('/purchase/products/search', [PurchasingController::class, 'search'])->middleware('permission:purchasing.view');
 
@@ -256,7 +253,11 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/products/export-excel', [ProductController::class, 'exportProducts'])->middleware('permission:product.view');
 
 
-    Route::get('/fetch-purchase-doc', [PurchasingController::class, 'fetchPurchaseDoc'])->middleware('permission:purchasing.view');
+    // purchasing.purchase is accepted too: posting a GRN only requires that
+    // permission, and the "print GRN" step straight after posting reads the
+    // document back through here — gating on view alone 403s the very user who
+    // just created it.
+    Route::get('/fetch-purchase-doc', [PurchasingController::class, 'fetchPurchaseDoc'])->middleware('permission:purchasing.view,purchasing.purchase');
     Route::get('/purchase-return/returnable', [PurchaseReturnController::class, 'returnable'])->middleware('permission:purchasing.view');
     Route::post('/purchase-return/confirm',   [PurchaseReturnController::class, 'confirm'])->middleware('permission:purchasing.purchase_return');
     Route::get('/fetch-purchase-lines', [PurchasingController::class, 'fetchPurchaseLines'])->middleware('permission:purchasing.view');

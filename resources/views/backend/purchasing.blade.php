@@ -477,6 +477,11 @@
             if (tab) tab.click();
         }
 
+        // Exposed because this function lives inside this handler, not at script
+        // top level, so script_purchase.js cannot see it. It calls this after a
+        // GRN posts so the cards show the stock that was just received.
+        window.refreshPurchaseProducts = resetToActiveTab;
+
         searchInput_product.addEventListener('input', () => {
             clearTimeout(searchTimer);
             searchTimer = setTimeout(doSearch, 250);

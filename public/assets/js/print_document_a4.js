@@ -251,10 +251,13 @@ function buildA4Letterhead(posInfo, docTitle, docNoLabel, docNo, extraMetaRows =
                 ${shop.logo_url ? `<img class="a4-company-logo" src="${shop.logo_url}" alt="Logo">` : ""}
                 <div>
                     <div class="a4-company-name">${shop.company || "Your Company"}</div>
+                    ${shop.description ? `<div class="a4-company-line">${shop.description}</div>` : ""}
                     ${shop.address1 ? `<div class="a4-company-line">${shop.address1}</div>` : ""}
                     ${shop.address2 ? `<div class="a4-company-line">${shop.address2}</div>` : ""}
                     ${(shop.phone1 || shop.phone2) ? `<div class="a4-company-line">${[shop.phone1, shop.phone2].filter(Boolean).join(" / ")}</div>` : ""}
+                    ${shop.telegram ? `<div class="a4-company-line">Telegram: ${shop.telegram}</div>` : ""}
                     ${shop.email ? `<div class="a4-company-line">${shop.email}</div>` : ""}
+                    ${shop.social ? `<div class="a4-company-line">${shop.social}</div>` : ""}
                 </div>
             </div>
             <div class="a4-doc-meta">
@@ -473,12 +476,44 @@ function buildKhmerInvoiceTable(header, lines) {
     const grand    = Number(header.grand_total ?? 0);
     const deposit  = Number(header.deposit_amount ?? header.paid_amount ?? 0);
 
+    // Being paid is a payment fact, so payment_status decides it. status tracks
+    // fulfilment ('Completed' can still be Partial), and is only consulted for
+    // payloads that carry no payment_status at all.
+    const paymentStatus = String(header.payment_status ?? "").toLowerCase();
+    const isPaid = paymentStatus !== ""
+        ? paymentStatus === "paid"
+        : String(header.status ?? "") === "Completed";
+
+    // production reads the configured rate from totalsDisplay.vat_status, which
+    // this schema does not store — recover it from the amount and the subtotal.
+    const vatPercent = vat > 0 && subTotal > 0 ? Math.round((vat / subTotal) * 100) : 0;
+
+    // The totals have to read top-to-bottom as arithmetic the customer can
+    // follow: subtotal, what came off it, what that leaves, what was paid, what
+    // is still owed. Printing the discount BELOW the balance broke that — an
+    // invoice showed Sub Total 155,000, Deposit 139,000, Balance 500, with the
+    // 15,500 discount that reconciles them stranded underneath.
+    const deductionRows =
+        (discount !== 0 ? totalRow("បញ្ចុះតម្លៃ/Discount", discount) : "")
+        + (vat > 0 ? totalRow(`អាករ/VAT ${vatPercent}%`, vat) : "");
+
+    // Grand Total always prints: it is the figure Deposit and Balance are
+    // measured against, so omitting it leaves those two unreconcilable.
+    const settlementRows = totalRow("សរុប /Grand Total", grand)
+        + (isPaid
+            ? ""
+            : totalRow("កក់មុន/Deposit", deposit)
+              + totalRow("នៅសល់/Balance", grand - deposit));
+
     return `
         <div id="invoice-table">
             <table style="width:100%; border-collapse:collapse;">
                 <thead>
                     <tr>
-                        <th style="max-width:5%;">ល.រ</th>
+                        <!-- max-width=5% (not :) is production's markup verbatim.
+                             It is invalid CSS and therefore ignored, which is what
+                             leaves the No. column auto-sized on the client's copy. -->
+                        <th style="max-width=5%;">ល.រ</th>
                         <th>រាយមុខទំនិញ</th>
                         <th>ឯកតា</th>
                         <th>ចំនួន</th>
@@ -489,11 +524,8 @@ function buildKhmerInvoiceTable(header, lines) {
                 <tbody>
                     ${body}
                     ${totalRow("សរុប/Sub Total", subTotal)}
-                    ${discount > 0 ? totalRow("បញ្ចុះតម្លៃ/Discount", discount) : ""}
-                    ${vat > 0 ? totalRow("អាករ/VAT", vat) : ""}
-                    ${totalRow("សរុប /Grand Total", grand)}
-                    ${deposit > 0 ? totalRow("កក់មុន/Deposit", deposit) : ""}
-                    ${deposit > 0 ? totalRow("នៅសល់/Balance", grand - deposit) : ""}
+                    ${deductionRows}
+                    ${settlementRows}
                 </tbody>
             </table>
         </div>
@@ -510,7 +542,11 @@ function buildInvoiceHtml(header, lines, posInfo) {
     header = header || {};
     const shop = posInfo || {};
 
+    // .print-page is the full-height flex column that .signature-section's
+    // "margin-top: auto" pushes against — without this wrapper the signatures
+    // sit directly under the items table instead of at the foot of the page.
     return `
+        <div class="print-page">
         <div class="header-center">
             <h2>${shop.company ?? ""}</h2>
             <div>${shop.description ?? ""}</div>
@@ -540,7 +576,11 @@ function buildInvoiceHtml(header, lines, posInfo) {
                 </div>
             </div>
 
-            <div class="info-box right-box">
+            <!-- "info-bo" (not info-box) is production's markup verbatim. Neither
+                 .info-bo nor .right-box has a CSS rule, so this column has no
+                 width: 48% and shrinks to its content — that is how the client's
+                 current invoice prints. -->
+            <div class="info-bo right-box">
                 <div class="row">
                     <span class="label">លេខរៀងវិក្កយបត្រ:</span>
                     <span class="value">${header.document_no ?? "-"}</span>
@@ -580,6 +620,7 @@ function buildInvoiceHtml(header, lines, posInfo) {
                 ហត្ថលេខា<br>
                 អ្នកលក់
             </div>
+        </div>
         </div>
     `;
 }
@@ -910,6 +951,16 @@ html, body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    page-break-after: always;
+    break-after: page;
+}
+
+/* Added on top of production's sheet: the batch printer concatenates several
+   pages into one document, so each invoice copy needs its own page break —
+   except the last, which would otherwise emit a trailing blank page. */
+.print-page:last-child {
+    page-break-after: auto;
+    break-after: auto;
 }
 
 .header-center {

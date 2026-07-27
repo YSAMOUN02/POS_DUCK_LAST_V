@@ -252,6 +252,10 @@ class PurchaseReturnController extends Controller
                     $entry->remaining_quantity  = 0;                      // a return holds no stock
                     $entry->entry_type          = $this->negative;        // still a stock-OUT type
                     $entry->unit_cost           = $unitCost;              // editable price
+                    // Inventory value of the stock going back to the vendor.
+                    // Always positive — the direction is carried by quantity /
+                    // entry_type, not by the sign of the value.
+                    $entry->cost_amount         = round(abs($qty) * abs((float) $unitCost), 6);
                     $entry->unit_price          = (float) ($h->unit_price ?? 0);
                     $entry->sell_price          = (float) ($h->sell_price ?? 0);
                     $entry->line_amount         = $line;                  // POSITIVE — cost recovered

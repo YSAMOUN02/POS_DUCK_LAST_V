@@ -127,20 +127,7 @@ class Cart extends Component
 
     private function generateExpenseCode()
     {
-        $year = now()->format('y'); // 26
-
-        $lastExpense = Expense::where('expense_code', 'like', "EXP{$year}-%")
-            ->latest('id')
-            ->first();
-
-        if ($lastExpense) {
-            $lastNumber = (int) substr($lastExpense->expense_code, -4);
-            $nextNumber = $lastNumber + 1;
-        } else {
-            $nextNumber = 1;
-        }
-
-        return 'EXP' . $year . '-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+        return Serial_No::next('expense');
     }
     #[\Livewire\Attributes\On('payment-expenses')]
     public function paymentExpenses($payload = [])
@@ -391,6 +378,10 @@ class Cart extends Component
                     'factor'         => $riel->factor,
 
                     'unit_cost' => $rowUnitCost,
+                    // Cost of the goods leaving stock. The sales value of the
+                    // same line stays in net_amount / grand_total_amount below,
+                    // so inventory value and revenue never share a column.
+                    'cost_amount' => round(abs($rowQty) * abs($rowUnitCost), 6),
                     'unit_price' => $unitPrice,
                     'sell_price' => $sellPrice,
 
@@ -493,23 +484,7 @@ class Cart extends Component
 
     protected function generateInvoiceNumber()
     {
-        $year = date('y'); // e.g. 26
-
-        // Get latest invoice for current year only
-        $lastInvoice = InvoiceHeader::where('invoice_number', 'like', 'INV' . $year . '-%')
-            ->orderByDesc('invoice_number')
-            ->first();
-
-        if (!$lastInvoice) {
-            return 'INV' . $year . '-0001';
-        }
-
-        // Extract last number (e.g. 0165)
-        $lastNumber = intval(substr($lastInvoice->invoice_number, -4));
-
-        $nextNumber = $lastNumber + 1;
-
-        return 'INV' . $year . '-' . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+        return Serial_No::next('invoice');
     }
     #[\Livewire\Attributes\On('transferCartToTable')]
 
@@ -606,56 +581,6 @@ class Cart extends Component
         }
 
         // 3️⃣ Otherwise → keep old queue
-    }
-
-    public function generateSerial($type)
-    {
-        return DB::transaction(function () use ($type) {
-
-            $yearShort = Carbon::now()->format('y');  // 26
-
-            // Find existing serial config
-            $serial = Serial_No::where('type', $type)->lockForUpdate()->first();
-
-            if (!$serial) {
-                // Create new if not exists
-                $serial = Serial_No::create([
-                    'prefix' => $type === 'invoice' ? 'INV' : 'DN',
-                    'type' => $type,
-                    'current_no' => 0,
-                    'last_reset_date' => now()
-                ]);
-            }
-
-            // 🔁 Reset yearly for delivery note
-            if ($type === 'delivery_note') {
-                if (
-                    $serial->last_reset_date &&
-                    Carbon::parse($serial->last_reset_date)->format('y') != $yearShort
-                ) {
-                    $serial->current_no = 0;
-                }
-            }
-
-            // Increment number
-            $serial->current_no += 1;
-            $serial->last_reset_date = now();
-            $serial->save();
-
-            // Format number 0001
-            $number = str_pad($serial->current_no, 4, '0', STR_PAD_LEFT);
-
-            // Return formatted result
-            if ($type === 'invoice') {
-                return "INV{$yearShort}-{$number}";
-            }
-
-            if ($type === 'delivery_note') {
-                return "DN{$yearShort}-{$number}";
-            }
-
-            return null;
-        });
     }
 
     protected function incrementQueueTable()
@@ -1019,6 +944,26 @@ class Cart extends Component
             ? $totalNet
             : round($totalNet + $totalVatAmount, $precision);
 
+        // Riel snaps every unit price to a 100៛ grid before it is shown, so the
+        // figure on screen is NOT base-USD × factor. The cashier tenders what is
+        // displayed, so that has to be what is owed — otherwise every riel sale
+        // banks a phantom balance: the cart showed 55,330៛, the header stored
+        // 55,800៛, and the order sat 470៛ short of Paid. Convert the stepped
+        // display back to USD at the order's own locked factor so the two agree.
+        $display = $this->totalsDisplay;
+        if (($display['step'] ?? 0) > 0 && ($display['factor'] ?? 1) > 1) {
+            $f = (float) $display['factor'];
+
+            return [
+                'total_original'   => round($display['total_original'] / $f, $precision),
+                'total_discount'   => round($display['total_discount'] / $f, $precision),
+                'total_net'        => round($display['total_net'] / $f, $precision),
+                'vat_status'       => round($display['vat_status'], $precision),
+                'total_vat_amount' => round($display['total_vat_amount'] / $f, $precision),
+                'grand_total'      => round($display['grand_total'] / $f, $precision),
+            ];
+        }
+
         return [
             'total_original'   => round($totalOriginal, $precision),
             'total_discount'   => round($totalDiscount, $precision),
@@ -1057,6 +1002,7 @@ class Cart extends Component
         $sub = 0.0;
         $net = 0.0;
         $vat = 0.0;
+        $vatStatus = 0.0;
         foreach ($this->cart as $item) {
             $price   = (float) ($item['price'] ?? 0);
             $netUnit = (float) ($item['discount_price'] ?? $price);
@@ -1067,6 +1013,13 @@ class Cart extends Component
             $sub += $unitDisp($price)   * $qty;
             $net += $unitDisp($netUnit) * $qty;
             $vat += $unitDisp($netUnit * $vatRate / 100) * $qty;
+
+            // Highest line rate, computed here rather than read from
+            // $this->totals: getTotals now derives its figures from THIS
+            // method, so reaching back into it would recurse forever.
+            if ($vatRate > $vatStatus) {
+                $vatStatus = $vatRate;
+            }
         }
 
         $disc  = $sub - $net;
@@ -1077,8 +1030,10 @@ class Cart extends Component
             'total_discount'   => round($disc, $decimal),
             'total_net'        => round($net, $decimal),
             'total_vat_amount' => round($vat, $decimal),
-            'vat_status'       => $this->totals['vat_status'],
+            'vat_status'       => $vatStatus,
             'grand_total'      => round($grand, $decimal),
+            'step'             => $step,
+            'factor'           => $factor,
         ];
     }
     #[\Livewire\Attributes\On('applyCustomerDiscountEvent')]
@@ -1489,21 +1444,7 @@ class Cart extends Component
 
     private function generateSaleOrderNo()
     {
-        $year = now()->format('y'); // 26, 27
-        $prefix = 'ORD' . $year . '-';
-
-        $lastOrder = SaleOrderHeader::where('document_no', 'like', $prefix . '%')
-            ->orderBy('document_no', 'desc')
-            ->first();
-
-        if (!$lastOrder) {
-            $nextNo = 1;
-        } else {
-            $lastNumber = (int) substr($lastOrder->document_no, strlen($prefix));
-            $nextNo = $lastNumber + 1;
-        }
-
-        return $prefix . str_pad($nextNo, 4, '0', STR_PAD_LEFT);
+        return Serial_No::next('sale_order');
     }
 
 
@@ -1528,7 +1469,7 @@ class Cart extends Component
             },
         ])->find($saleOrderId);
 
-        $posInfo = PosProfile::where('user_report', $saleOrder->created_user_id)->first();
+        $posInfo = PosProfile::forUser($saleOrder->created_user_id);
         $posInfo = $posInfo ? $posInfo->toArray() : [];
         $posInfo['logo_url'] = PosProfileController::logoUrl();
 
@@ -1636,7 +1577,7 @@ class Cart extends Component
             },
         ])->find($saleOrderId);
 
-        $posInfo = PosProfile::where('user_report', $saleOrder->created_user_id)->first();
+        $posInfo = PosProfile::forUser($saleOrder->created_user_id);
         $posInfo = $posInfo ? $posInfo->toArray() : [];
         $posInfo['logo_url'] = PosProfileController::logoUrl();
 
@@ -2189,6 +2130,10 @@ class Cart extends Component
                             'factor'         => $riel->factor,
 
                             'unit_cost' => $rowUnitCost,
+                            // Cost of the goods leaving stock. The sales value
+                            // of the same line stays in net_amount /
+                            // grand_total_amount below.
+                            'cost_amount' => round(abs($rowQty) * abs($rowUnitCost), 6),
                             'unit_price' => $unitPrice,
                             'sell_price' => $sellPrice,
 
@@ -2223,7 +2168,7 @@ class Cart extends Component
                             'quantity_shiped' => DB::raw('ROUND(COALESCE(quantity_shiped, 0) + ' . $qty . ', 6)')
                         ]);
                 }
-                $posInfo = PosProfile::where('user_report', $saleOrder->created_user_id)->first();
+                $posInfo = PosProfile::forUser($saleOrder->created_user_id);
                 $posInfo = $posInfo ? $posInfo->toArray() : [];
                 $posInfo['logo_url'] = PosProfileController::logoUrl();
                 $this->dispatch('pass_sale_header', [
@@ -2665,21 +2610,7 @@ class Cart extends Component
 
     private function generateQuotationNo()
     {
-        $year = now()->format('y');
-        $prefix = 'QUOT' . $year . '-';
-
-        $lastQuotation = Quotation::where('quotation_no', 'like', $prefix . '%')
-            ->orderBy('quotation_no', 'desc')
-            ->first();
-
-        if (!$lastQuotation) {
-            $nextNo = 1;
-        } else {
-            $lastNumber = (int) substr($lastQuotation->quotation_no, strlen($prefix));
-            $nextNo = $lastNumber + 1;
-        }
-
-        return $prefix . str_pad($nextNo, 3, '0', STR_PAD_LEFT);
+        return Serial_No::next('quotation');
     }
 
     #[On('load-quotation-to-cart')]
@@ -2971,6 +2902,8 @@ class Cart extends Component
                     'entry_type'         => 'positive',
 
                     'unit_cost'          => $entry->unit_cost,
+                    // Stock coming back in is worth what it cost going out.
+                    'cost_amount'        => round(abs($returnQty) * abs((float) $entry->unit_cost), 6),
                     'unit_price'         => $entry->unit_price,
                     'sell_price'         => $entry->sell_price,
                     'discount_percent'   => $entry->discount_percent,
@@ -3188,19 +3121,7 @@ private function getLotPurchaseInfo($productId, $lot = null, $warehouseId = null
 }
 private function generateAdjustmentNo()
 {
-    $year   = now()->format('y');       // 26
-    $prefix = 'ADJ' . $year . '-';      // ADJ26-
-
-    $last = ItemLedgerEntry::where('document_no', 'like', $prefix . '%')
-        ->orderBy('document_no', 'desc')
-        ->first();
-
-    $next = $last
-        ? (int) substr($last->document_no, strlen($prefix)) + 1
-        : 1;
-
-    // 4-digit to match EXP/SIN/SO. Change 4 -> 3 for ADJ26-001.
-    return $prefix . str_pad($next, 4, '0', STR_PAD_LEFT);
+    return Serial_No::next('adjustment');
 }
 
 #[On('stock-adjustment')]
@@ -3402,6 +3323,9 @@ public function stockAdjustment($payload)
                     'factor'             => $this->factor,
 
                     'unit_cost'          => $unitCost,    // same cost unit
+                    // Stock adjustment is a pure inventory move — it has a cost
+                    // value and no sales value at all.
+                    'cost_amount'        => round(abs($signedQty) * abs($unitCost), 6),
                     'unit_price'         => $r($product->sell_price ?? 0),
                     'sell_price'         => $r($product->sell_price ?? 0),
 

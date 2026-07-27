@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\ActivityLog;
 use App\Models\Permission;
 use App\Models\User;
 use App\Models\UserWarehouse;
@@ -91,7 +90,7 @@ class UserController extends Controller
                 $user->warehouses()->sync($request->warehouses);
             }
 
-            $this->syncPermissionsAndLog($user, $request->input('permissions', []));
+            $this->syncPermissions($user, $request->input('permissions', []));
 
             return response()->json([
                 'success' => true,
@@ -182,7 +181,7 @@ class UserController extends Controller
 
             $user->warehouses()->sync($request->input('warehouses', []));
 
-            $this->syncPermissionsAndLog($user, $request->input('permissions', []));
+            $this->syncPermissions($user, $request->input('permissions', []));
 
             return response()->json([
                 'success' => true,
@@ -196,33 +195,9 @@ class UserController extends Controller
         }
     }
 
-    /**
-     * Sync a user's permission checkboxes and write a manual activity-log
-     * row for it — sync() on a belongsToMany pivot never fires model events,
-     * so LogsActivity's create/update hooks on User can't see this change.
-     */
-    private function syncPermissionsAndLog(User $user, array $permissionIds): void
+    /** Sync a user's permission checkboxes. */
+    private function syncPermissions(User $user, array $permissionIds): void
     {
-        $before = $user->permissions()->pluck('key')->sort()->values()->all();
-
         $user->permissions()->sync($permissionIds);
-
-        $after = Permission::whereIn('id', $permissionIds)->pluck('key')->sort()->values()->all();
-
-        if ($before === $after) {
-            return;
-        }
-
-        ActivityLog::create([
-            'user_id'    => Auth::id(),
-            'user_name'  => Auth::user()->name ?? 'System',
-            'action'     => 'permissions_synced',
-            'model_type' => 'User',
-            'model_id'   => $user->id,
-            'section'    => 'user',
-            'old_values' => ['permissions' => $before],
-            'new_values' => ['permissions' => $after],
-            'ip_address' => request()?->ip(),
-        ]);
     }
 }

@@ -34,14 +34,17 @@ class TruncateData extends Command
      * be reset without leaving half a transaction behind.
      */
     private const GROUPS = [
-        'stock'     => ['warehouse_product', 'serial_no'],
+        // serial_no is NOT here: it holds the document-number counters, not
+        // stock. Truncating it alongside warehouse_product reset every sequence
+        // while the documents they numbered stayed put, so the next sale would
+        // re-issue SO26-0001 on top of an existing order.
+        'stock'     => ['warehouse_product'],
         'ledger'    => ['item_ledger_entries'],
         'sales'     => ['sale_order_headers', 'sale_order_lines', 'sale_invoice_headers', 'sale_invoice_lines'],
         'purchases' => ['purchase_headers', 'purchase_lines'],
         'quotes'    => ['quotations', 'quotation_lines'],
         'expenses'  => ['expenses'],
         'queues'    => ['table_queues'],
-        'logs'      => ['activity_logs'],
         'system'    => ['cache', 'cache_locks', 'jobs', 'job_batches', 'failed_jobs', 'sessions'],
     ];
 
@@ -51,6 +54,7 @@ class TruncateData extends Command
         'currencies', 'vendors', 'customers', 'pos_profiles', 'bins',
         'permissions', 'permission_user', 'migrations',
         'password_reset_tokens', 'personal_access_tokens',
+        'serial_no',
     ];
 
     public function handle(): int

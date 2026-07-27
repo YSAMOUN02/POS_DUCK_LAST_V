@@ -2,15 +2,10 @@
 
 namespace App\Models;
 
-use App\Models\Concerns\LogsActivity;
 use Illuminate\Database\Eloquent\Model;
 
 class Quotation extends Model
 {
-    use LogsActivity;
-
-    protected string $activitySection = 'quotation';
-
     protected $table = 'quotations';
 
     protected $fillable = [

@@ -2,15 +2,10 @@
 
 namespace App\Models;
 
-use App\Models\Concerns\LogsActivity;
 use Illuminate\Database\Eloquent\Model;
 
 class Warehouse extends Model
 {
-    use LogsActivity;
-
-    protected string $activitySection = 'warehouse';
-
     protected $table = 'warehouses';
     protected $fillable = ['name', 'location', 'status', 'note', 'created_by'];
     protected $casts = ['status' => 'boolean'];

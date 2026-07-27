@@ -2,15 +2,10 @@
 
 namespace App\Models;
 
-use App\Models\Concerns\LogsActivity;
 use Illuminate\Database\Eloquent\Model;
 
 class PurchaseHeader extends Model
 {
-    use LogsActivity;
-
-    protected string $activitySection = 'purchasing';
-
     protected $table = 'purchase_headers';
 
     protected $fillable = [

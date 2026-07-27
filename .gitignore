@@ -20,7 +20,12 @@ Thumbs.db
 /vendor
 /storage/*.key
 /storage/pail
-/storage/framework/*
+
+# storage/framework/ contents are ignored via the nested .gitignore files in
+# each subdirectory (Laravel convention), so the directories themselves stay in
+# the repo. Do not add a blanket /storage/framework/* rule here — it hides the
+# subdirs from git entirely, and a fresh clone then fails `composer install`
+# with "Please provide a valid cache path."
 /bootstrap/cache/*
 
 # Database dumps written by `php artisan pos:truncate --backup`.

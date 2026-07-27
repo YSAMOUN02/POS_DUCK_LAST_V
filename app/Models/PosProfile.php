@@ -2,15 +2,10 @@
 
 namespace App\Models;
 
-use App\Models\Concerns\LogsActivity;
 use Illuminate\Database\Eloquent\Model;
 
 class PosProfile extends Model
 {
-    use LogsActivity;
-
-    protected string $activitySection = 'company_profile';
-
     protected $table = 'pos_profiles';
 
     protected $fillable = [
@@ -27,12 +22,24 @@ class PosProfile extends Model
         'seller',
         'customer_name',
     ];
-    // app/Models/User.php
-// app/Models/PosProfile.php
+    /**
+     * Profile to show on printed documents for a user.
+     *
+     * There's one company, not one profile per user: a user with their own
+     * saved row gets it, anyone else falls back to the shared house profile
+     * (user_report = 0). Without the fallback, any user who never saved a
+     * profile printed an invoice with a blank letterhead — no company name,
+     * no address, no phone.
+     */
+    public static function forUser($userId): ?self
+    {
+        return static::where('user_report', $userId)->first()
+            ?? static::where('user_report', '0')->first()
+            ?? static::first();
+    }
 
-public function user()
-{
-    return $this->belongsTo(User::class);
-}
-
+    public function user()
+    {
+        return $this->belongsTo(User::class);
+    }
 }

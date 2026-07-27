@@ -1,3 +1,10 @@
+// The purchase currently loaded into the detail modal, shared with
+// print_purchase.js. It must be declared: assigning to a bare name creates an
+// implicit global, but *reading* one that was never assigned throws, so
+// printPurchase()'s own "Please open purchase first" guard died with
+// "ReferenceError: currentPurchase is not defined" before it could show.
+let currentPurchase = null;
+
 window.addEventListener("DOMContentLoaded", async () => {
     const categorySelect = document.getElementById("category_filter");
     if (!categorySelect) {
@@ -42,6 +49,12 @@ window.addEventListener("success", (e) => {
     });
     closeGrnModal();
 
+    // The receipt just changed stock, so the cards behind the modal are stale.
+    // Reloading the active tab re-fetches them with the new quantities.
+    if (typeof window.refreshPurchaseProducts === "function") {
+        window.refreshPurchaseProducts();
+    }
+
     if (detail.document_no) {
         openGrnPostedModal(detail.document_no, detail.lines || []);
     }
@@ -83,19 +96,59 @@ function openGrnPostedModal(documentNo, lines) {
 
     async function onPrint() {
         try {
-            const res = await fetch("/fetch-purchase-doc?no=" + encodeURIComponent(documentNo));
-            const doc = await res.json();
-            if (doc && doc.no) {
-                currentPurchase = doc;
-                await printPurchaseOrderA4(currentPurchase, pos_profile_for_print);
-            } else {
-                showToast({ message: "Could not load GRN for printing", type: "error" });
+            // The Accept header matters: without it Laravel answers an expired
+            // session with a 302 to the login page, fetch follows it, and
+            // res.json() chokes on HTML — which surfaced as a generic "Failed
+            // to print GRN" no matter what actually went wrong. Asking for JSON
+            // makes auth/permission failures come back as real status codes.
+            const res = await fetch("/fetch-purchase-doc?no=" + encodeURIComponent(documentNo), {
+                headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+            });
+
+            if (!res.ok) {
+                const reason = {
+                    401: "your session expired — log in again",
+                    403: "you do not have permission to view purchase documents",
+                    404: "the document could not be found",
+                }[res.status] ?? `server error ${res.status}`;
+
+                // The GRN itself posted fine; only the print lookup failed, so
+                // say so — otherwise it reads like the whole receipt was lost.
+                showToast({
+                    message: `GRN ${documentNo} was posted, but printing failed: ${reason}. Reprint it from the purchase list.`,
+                    type: "error",
+                });
+                return;
             }
+
+            const doc = await res.json();
+            if (!doc || !doc.no) {
+                showToast({ message: "Could not load GRN for printing", type: "error" });
+                return;
+            }
+
+            currentPurchase = doc;
+            // typeof, not a bare read: an undeclared identifier throws on read,
+            // and losing the shop profile should print a plain letterhead, not
+            // abort the whole GRN print.
+            const posInfo = typeof pos_profile_for_print !== "undefined"
+                ? pos_profile_for_print
+                : (window.pos_profile_for_print ?? null);
+
+            await printPurchaseOrderA4(currentPurchase, posInfo);
         } catch (err) {
-            console.error(err);
-            showToast({ message: "Failed to print GRN", type: "error" });
+            // Show what actually failed. "Failed to print GRN" on its own says
+            // nothing — the throw could be the lookup, the JSON parse or the
+            // print itself, and each needs a different fix.
+            console.error("GRN print failed:", err);
+            showToast({
+                message: `Failed to print GRN ${documentNo} — ${err?.name ?? "Error"}: ${err?.message ?? err}`,
+                type: "error",
+                duration: 12000,
+            });
+        } finally {
+            closeModal();
         }
-        closeModal();
     }
 
     function onSkip() {

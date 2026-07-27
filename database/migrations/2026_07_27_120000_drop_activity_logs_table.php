@@ -4,12 +4,22 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
+/**
+ * Drops the Change Log feature's table. The model, trait, controller, route
+ * and UI were removed with it, so nothing reads or writes this table any more.
+ *
+ * down() recreates the original structure from
+ * 2026_07_20_044806_create_activity_logs_table (deleted in the same change) so
+ * the migration stays reversible, but the rows themselves are not recoverable.
+ */
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
+    {
+        Schema::dropIfExists('activity_logs');
+    }
+
+    public function down(): void
     {
         Schema::create('activity_logs', function (Blueprint $table) {
             $table->id();
@@ -30,13 +40,5 @@ return new class extends Migration
             $table->index('created_at');
             $table->foreign('user_id')->references('id')->on('users')->nullOnDelete();
         });
-    }
-
-    /**
-     * Reverse the migrations.
-     */
-    public function down(): void
-    {
-        Schema::dropIfExists('activity_logs');
     }
 };

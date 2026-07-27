@@ -1964,8 +1964,11 @@
                                         <th class="px-3 py-3 font-bold">{{ __('Product Code') }}</th>
                                         <th class="px-3 py-3 font-bold">{{ __('Product Name') }}</th>
                                         <th class="px-3 py-3 font-bold">{{ __('Category') }}</th>
-                                        <th class="px-3 py-3 font-bold text-right">{{ __('Total Quantity') }}</th>
-                                        <th class="px-3 py-3 font-bold text-center">{{ __('Warehouses') }}</th>
+                                        <th class="px-3 py-3 font-bold text-right">{{ __('Quantity') }}</th>
+                                        {{-- Rows are grouped per product per warehouse now, so this
+                                             names the warehouse instead of counting them (it was
+                                             always going to read "1"). --}}
+                                        <th class="px-3 py-3 font-bold">{{ __('Warehouse') }}</th>
                                         <th class="px-3 py-3 font-bold text-center">{{ __('Lots') }}</th>
                                         <th class="px-3 py-3 font-bold text-center">{{ __('Status') }}</th>
                                         <th class="px-3 py-3 font-bold text-center">{{ __('Actions') }}</th>
@@ -3371,107 +3374,6 @@
 
     @endif
 
-    {{-- Change Log is deliberately admin-only, not a grantable permission
-         (see PermissionSeeder notes) — stays a hard role check. --}}
-    @if (Auth::user()->role === 'admin')
-        {{-- <Change Log > --}}
-        <div id="default-modal-change-log" tabindex="-1" aria-hidden="true" data-modal-backdrop="static"
-            class="modal-overlay-sale items-start md:items-center !p-1 hidden">
-
-            <div class="relative w-full max-w-[98vw]">
-                <div class="h-[98vh] min-h-[98vh] max-h-[98vh] modal-card-sale">
-
-                    <!-- Modal header -->
-                    <div class="modal-header-sale flex-col items-stretch gap-3">
-                        <div class="flex w-full items-center justify-between">
-                            <h3 class="text-lg font-bold text-white">
-                                Change Log
-                            </h3>
-                            <button type="button"
-                                class="modal-close-btn"
-                                data-modal-hide="default-modal-change-log">
-                                <svg class="w-5 h-5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"
-                                    width="24" height="24" fill="none" viewBox="0 0 24 24">
-                                    <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
-                                        stroke-width="2" d="M6 18 17.94 6M18 18 6.06 6" />
-                                </svg>
-                                <span class="sr-only">Close modal</span>
-                            </button>
-                        </div>
-                        <div class="flex flex-wrap items-center gap-3">
-                            <select id="change_log_user"
-                                class="px-3 py-2 border rounded-xl text-sm w-48 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                                <option value="">All Users</option>
-                            </select>
-
-                            <select id="change_log_section"
-                                class="px-3 py-2 border rounded-xl text-sm w-48 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                                <option value="">All Sections</option>
-                            </select>
-
-                            <select id="change_log_action"
-                                class="px-3 py-2 border rounded-xl text-sm w-44 focus:outline-none focus:ring-1 focus:ring-blue-500">
-                                <option value="">All Actions</option>
-                                <option value="created">Created</option>
-                                <option value="updated">Updated</option>
-                                <option value="deleted">Deleted</option>
-                                <option value="permissions_synced">Permissions Synced</option>
-                                <option value="login">Login</option>
-                                <option value="logout">Logout</option>
-                            </select>
-
-                            <div class="flex items-center gap-2">
-                                <input type="date" id="change_log_date_from"
-                                    class="px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
-                                <span class="text-sm text-gray-500">to</span>
-                                <input type="date" id="change_log_date_to"
-                                    class="px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Modal body -->
-                    <div class="flex-1 overflow-y-auto min-h-0 p-4 md:p-6">
-                        <div class="scroll_content_70 overflow-x-auto">
-                            <table id="change-log-table" class="w-full text-sm text-left border border-default rounded-base">
-                                <thead class="sticky_top text-xs uppercase bg-neutral-secondary">
-                                    <tr class="text-nowrap">
-                                        <th class="px-4 py-3">{{ __('Date/Time') }}</th>
-                                        <th class="px-4 py-3">{{ __('User') }}</th>
-                                        <th class="px-4 py-3">{{ __('Action') }}</th>
-                                        <th class="px-4 py-3">{{ __('Section') }}</th>
-                                        <th class="px-4 py-3">{{ __('Model') }}</th>
-                                        <th class="px-4 py-3">{{ __('Old &rarr; New') }}</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="change-log-table-body">
-                                    <!-- async rows -->
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    <!-- Modal footer -->
-                    <div class="flex items-center justify-between border-t border-slate-200 px-4 py-2 bg-white shrink-0">
-                        <div id="change_log_pagination_info" class="text-sm text-gray-500"></div>
-                        <div class="flex items-center gap-2">
-                            <button type="button" id="change_log_prev"
-                                class="rounded-xl border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 transition">
-                                Prev
-                            </button>
-                            <button type="button" id="change_log_next"
-                                class="rounded-xl border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 transition">
-                                Next
-                            </button>
-                        </div>
-                    </div>
-
-                </div>
-            </div>
-        </div>
-
-    @endif
-
     @if (Auth::user()->hasPermission('user.create') || Auth::user()->hasPermission('user.edit'))
         {{-- <Manage Permissions (shared by Add + Edit User) > --}}
         <div id="default-modal-manage-permissions" tabindex="-1" aria-hidden="true" data-modal-backdrop="static"
@@ -4254,6 +4156,10 @@
                                         <th class="border-b border-sky-100 px-2 py-1.5 font-bold">{{ __('Entry Type') }}</th>
 
                                         <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right">{{ __('Cost') }}</th>
+                                        {{-- Inventory value of the movement (qty x cost), as opposed to the
+                                             sales value in Line/Net/Total Amount further right. --}}
+                                        <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right">{{ __('Cost Amount') }}
+                                        </th>
                                         <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right">{{ __('Unit Price') }}</th>
                                         <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right">{{ __('Selling Price') }}
                                         </th>
@@ -4653,62 +4559,9 @@
                                     group-hover:opacity-100 transition duration-300"></span>
                         </button>
 
-                        <!-- Print Delivery Note Button -->
-                        <button onclick="printSelectedSaleOrderDeliveryNote()"
-                            class="group relative overflow-hidden px-5 py-2.5 rounded-xl
-                                bg-gradient-to-r from-teal-600 to-emerald-700
-                                hover:from-teal-700 hover:to-emerald-800
-                                text-white font-semibold shadow-md hover:shadow-xl
-                                transition-all duration-300 active:scale-95">
-
-                            <span class="relative flex items-center gap-2">
-                                <i class="fa-solid fa-truck-fast text-sm"></i>
-                                Print Delivery Note
-                            </span>
-
-                            <!-- glow -->
-                            <span
-                                class="absolute inset-0 bg-white/10 opacity-0
-                                    group-hover:opacity-100 transition duration-300"></span>
-                        </button>
-
-                        <!-- Print Receipt Button -->
-                        <button onclick="printSelectedSaleOrderReceipt()"
-                            class="group relative overflow-hidden px-5 py-2.5 rounded-xl
-                                bg-gradient-to-r from-amber-500 to-orange-600
-                                hover:from-amber-600 hover:to-orange-700
-                                text-white font-semibold shadow-md hover:shadow-xl
-                                transition-all duration-300 active:scale-95">
-
-                            <span class="relative flex items-center gap-2">
-                                <i class="fa-solid fa-receipt text-sm"></i>
-                                Print Receipt
-                            </span>
-
-                            <!-- glow -->
-                            <span
-                                class="absolute inset-0 bg-white/10 opacity-0
-                                    group-hover:opacity-100 transition duration-300"></span>
-                        </button>
-
-                        <!-- Picking List -->
-                        <button onclick="printSelectedSaleOrderPickingList()"
-                            class="group relative overflow-hidden px-5 py-2.5 rounded-xl
-                                bg-gradient-to-r from-indigo-600 to-violet-700
-                                hover:from-indigo-700 hover:to-violet-800
-                                text-white font-semibold shadow-md hover:shadow-xl
-                                transition-all duration-300 active:scale-95">
-
-                            <span class="relative flex items-center gap-2">
-                                <i class="fa-solid fa-boxes-packing text-sm"></i>
-                                Picking List
-                            </span>
-
-                            <!-- glow -->
-                            <span
-                                class="absolute inset-0 bg-white/10 opacity-0
-                                    group-hover:opacity-100 transition duration-300"></span>
-                        </button>
+                        {{-- Delivery Note / Receipt / Picking List live in the sale
+                             order detail modal instead — the list keeps only the
+                             invoice, which is the one printed straight off a row. --}}
 
                     </div>
 
@@ -5056,7 +4909,7 @@
                             <button type="button" onclick="Confirm_Save_Sale_Order('Deposit', this)"
                                 class="{{ Auth::user()->hasPermission('pos_sale.sell') ? '' : 'hidden' }} inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 to-green-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md hover:from-emerald-600 hover:to-green-700 hover:shadow-lg transition active:scale-95">
                                 <i class="fa-solid fa-file-invoice"></i>
-                                Confirm Payment
+                                Issue Invoice
                             </button>
 
                             {{-- Step 1 of the 2-step flow: creates the order without
@@ -5132,7 +4985,27 @@
                     </div>
                 </div>
 
-                <div class="flex items-center gap-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    {{-- Moved off the sale order list, which keeps only Print
+                         Invoice. These act on the order shown in this modal. --}}
+                    <button type="button" onclick="printSelectedSaleOrderDeliveryNote()"
+                        class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-700 hover:from-teal-700 hover:to-emerald-800 text-white px-4 py-2 text-sm font-semibold shadow-md transition active:scale-95">
+                        <i class="fa-solid fa-truck-fast"></i>
+                        Delivery Note
+                    </button>
+
+                    <button type="button" onclick="printSelectedSaleOrderReceipt()"
+                        class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white px-4 py-2 text-sm font-semibold shadow-md transition active:scale-95">
+                        <i class="fa-solid fa-receipt"></i>
+                        Receipt
+                    </button>
+
+                    <button type="button" onclick="printSelectedSaleOrderPickingList()"
+                        class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-700 hover:from-indigo-700 hover:to-violet-800 text-white px-4 py-2 text-sm font-semibold shadow-md transition active:scale-95">
+                        <i class="fa-solid fa-boxes-packing"></i>
+                        Picking List
+                    </button>
+
                     <button type="button" id="btn-toggle-sale-currency" onclick="toggleSaleOrderCurrency()"
                         class="inline-flex items-center gap-2 rounded-xl bg-white/10 hover:bg-white/20 text-white px-4 py-2 text-sm font-semibold transition">
                         <i class="fa-solid fa-money-bill-transfer"></i>

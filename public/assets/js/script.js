@@ -2027,6 +2027,32 @@ document
         });
     });
 const modal = document.getElementById("warehouse-stock-modal");
+// Stock rows are grouped per product per warehouse, so the same product repeats
+// down the list. Tinting by warehouse makes those repeats scannable — which row
+// belongs to which site is visible without reading the column.
+//
+// Keyed off warehouse_id, not row order, so a warehouse keeps its colour across
+// pages and filters. Classes are written out in full because Tailwind scans for
+// literal strings and would purge anything assembled at runtime.
+const WAREHOUSE_TINTS = [
+    { row: "bg-sky-50/70",     badge: "bg-sky-100 text-sky-800",         dot: "bg-sky-500" },
+    { row: "bg-amber-50/70",   badge: "bg-amber-100 text-amber-800",     dot: "bg-amber-500" },
+    { row: "bg-violet-50/70",  badge: "bg-violet-100 text-violet-800",   dot: "bg-violet-500" },
+    { row: "bg-emerald-50/70", badge: "bg-emerald-100 text-emerald-800", dot: "bg-emerald-500" },
+    { row: "bg-rose-50/70",    badge: "bg-rose-100 text-rose-800",       dot: "bg-rose-500" },
+    { row: "bg-teal-50/70",    badge: "bg-teal-100 text-teal-800",       dot: "bg-teal-500" },
+    { row: "bg-indigo-50/70",  badge: "bg-indigo-100 text-indigo-800",   dot: "bg-indigo-500" },
+    { row: "bg-orange-50/70",  badge: "bg-orange-100 text-orange-800",   dot: "bg-orange-500" },
+];
+
+function warehouseTint(warehouseId) {
+    const id = Number(warehouseId);
+    if (!Number.isFinite(id)) {
+        return { row: "", badge: "bg-gray-100 text-gray-700", dot: "bg-gray-400" };
+    }
+    return WAREHOUSE_TINTS[id % WAREHOUSE_TINTS.length];
+}
+
 const tbody_stock = document.getElementById("warehouse-stock-tbody");
 const closeBtn = document.getElementById("close-modal");
 const searchInput_stock = document.getElementById("search-stock");
@@ -2150,17 +2176,22 @@ function renderStockTable(products, currentPage = 1, perPage = 10) {
 
     products.forEach((p, index) => {
         const rowNumber = (currentPage - 1) * perPage + index + 1;
+        const wh = warehouseTint(p.warehouse_id);
 
         tbody_stock.insertAdjacentHTML(
             "beforeend",
             `
-            <tr class="hover:bg-green-50 transition-colors">
+            <tr class="${wh.row} hover:brightness-95 transition-colors">
                 <td class="px-3 text-left text-sm text-gray-600">${rowNumber}</td>
                 <td class="px-3 text-left text-sm">${p.code ?? ""}</td>
                 <td class="px-3 text-left text-sm font-medium">${p.product_name}</td>
                 <td class="px-3 text-left text-sm">${p.category_name ?? "NA"}</td>
                 <td class="px-3 text-end text-sm font-bold">${parseFloat(p.total_quantity)}</td>
-                <td class="px-3 text-center text-sm">${p.warehouse_count}</td>
+                <td class="px-3 text-left text-sm">
+                    <span class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold ${wh.badge}">
+                        <span class="w-1.5 h-1.5 rounded-full ${wh.dot}"></span>${p.warehouse_name ?? ""}
+                    </span>
+                </td>
                 <td class="px-3 text-center text-sm">${p.lot_count}</td>
                 <td class="px-3 text-center text-sm ${p.status ? "text-green-600" : "text-red-500"}">
                     ${p.status ? "Active" : "Inactive"}
@@ -4836,7 +4867,7 @@ async function loadItemLedgerEntries(page = 1) {
 
     tbody.innerHTML = `
         <tr>
-            <td colspan="34" class="px-3 py-4 text-center text-gray-500">Loading...</td>
+            <td colspan="38" class="px-3 py-4 text-center text-gray-500">Loading...</td>
         </tr>
     `;
 
@@ -4864,7 +4895,7 @@ async function loadItemLedgerEntries(page = 1) {
 
         tbody.innerHTML = `
             <tr>
-                <td colspan="34" class="px-3 py-4 text-center text-red-500">
+                <td colspan="38" class="px-3 py-4 text-center text-red-500">
                     Failed to load item ledger entry
                 </td>
             </tr>
@@ -4877,7 +4908,7 @@ function renderItemLedgerEntries(rows) {
     if (!rows.length) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="34" class="px-3 py-4 text-center text-gray-500">
+                <td colspan="38" class="px-3 py-4 text-center text-gray-500">
                     No item ledger entry found
                 </td>
             </tr>
@@ -4910,6 +4941,7 @@ function renderItemLedgerEntries(rows) {
             <td class="px-2 py-1">${row.entry_type ?? ""}</td>
 
             <td class="px-2 py-1 text-right">${formatNumber(row.unit_cost)} $</td>
+            <td class="px-2 py-1 text-right font-semibold">${formatNumber(row.cost_amount)} $</td>
             <td class="px-2 py-1 text-right">${formatNumber(row.unit_price)} $</td>
             <td class="px-2 py-1 text-right">${formatNumber(row.sell_price)} $</td>
 
@@ -5147,7 +5179,19 @@ window.addEventListener("pass_sale_header", async (event) => {
     }
 
     if (a4Pages.length > 0) {
-        await printA4(style_a4_document + a4Pages.join(""), a4DocNo);
+        // The delivery note and picking list are styled by the .a4-* rules in
+        // style_a4_document, but the Khmer invoice uses its own markup
+        // (.header-center / .line / .info-section / .total_print) which only
+        // style_invoice_khmer defines. Sending style_a4_document alone printed
+        // the invoice with no styling at all — no rules, no borders, no
+        // two-column header. A combined document needs both sheets; the Khmer
+        // one is only added when an invoice is actually in the batch so its
+        // bare table/th/td rules don't reach a delivery-note-only print.
+        const a4Styles = options?.invoice.checked
+            ? style_a4_document + style_invoice_khmer
+            : style_a4_document;
+
+        await printA4(a4Styles + a4Pages.join(""), a4DocNo);
     }
 
     reloadProducts();
@@ -5789,10 +5833,13 @@ function Save_Sale_Order() {
         document.querySelector("#total_amount")?.value || 0,
     );
 
-    const factor_riel = document.querySelector("#riel_factor").value || 4000;
+    const factor_riel = rielFactor();
     const symbol = "៛";
 
-    const totalConverted = totalUSD * factor_riel;
+    // Snap to the 100៛ grid, same as REMAINING/RETURN below. Raw USD × rate is
+    // a binary float: 82.7093… × 4123 came out as 341000.96099999995, and that
+    // whole string was being written into the field.
+    const totalConverted = roundDisplay(totalUSD * factor_riel, symbol);
 
 
     // keep the "Pay as X" label + placeholder honest so nobody types riel into a $ field
@@ -5811,10 +5858,8 @@ function Save_Sale_Order() {
         dueUSDEl.dataset.amount = totalUSD;
     }
     if (dueCvtEl) {
-        dueCvtEl.value = totalConverted + " " + symbol;
+        dueCvtEl.value = totalConverted.toLocaleString("en-US") + " " + symbol;
         dueCvtEl.dataset.amount = totalConverted;
-
-        console.log(dueCvtEl);
     }
 
     // today (en-CA → YYYY-MM-DD)
@@ -5870,6 +5915,16 @@ function moneyNumber(value) {
                 .replace(/[^\d.-]/g, ""),
         ) || 0
     );
+}
+
+// The POS screen carries its riel rate in #riel_factor (cart.blade.php).
+// #currency_display_factor belongs to the PURCHASING screen and does not exist
+// here — script.js is not even loaded there — so querying it always returned
+// null and fell back to a factor of 1. That made "payOther / factor" a no-op,
+// so riel tendered was banked as if it were dollars: paying 20,000៛ on a
+// 24,600៛ order stored 20,001.12 USD and reported 82,004,600៛ paid.
+function rielFactor() {
+    return Number(document.querySelector("#riel_factor")?.value) || 4000;
 }
 function validateSaleOrderPayment(e = null) {
     const payUSDInput = document.getElementById("so_pay_usd");
@@ -5953,9 +6008,13 @@ function updateSaleOrderRemaining() {
     const netOwedUSD = Math.max(0, totalUSD - billDiscUSD);
 
     // Payments
-    const oldPaidUSD = moneyNumber(
-        document.querySelector("#paid_amount")?.value ?? 0
-    );
+    // dataset.amount holds the unrounded figure; .value is the 2-dp version
+    // shown on screen. Reading .value here would settle against a rounded
+    // payment and leave a few riel outstanding on every reloaded order.
+    const paidEl = document.querySelector("#paid_amount");
+    const oldPaidUSD = paidEl?.dataset?.amount !== undefined
+        ? Number(paidEl.dataset.amount) || 0
+        : moneyNumber(paidEl?.value ?? 0);
 
     const payUSD = moneyNumber(
         document.getElementById("so_pay_usd")?.value ?? 0
@@ -6528,13 +6587,22 @@ function formatQty(value) {
 }
 
 function formatCurrency(value, factor) {
-    factor = parseFloat(factor);
+    factor = parseFloat(factor) || 1;
     const converted = Number(value || 0) * factor;
+
     if (factor > 1) {
-        return Math.round(converted).toLocaleString("en-US");
+        // Snap to the same 100៛ grid the cart totals use, so the detail modal
+        // can never quote a figure that was never charged.
+        return (Math.round(converted / 100) * 100).toLocaleString("en-US");
     }
 
-    return smartNumber(converted, 6);
+    // These are amounts of money, so 2 decimals — not the raw stored precision.
+    // smartNumber(…, 6) printed "22.682925 $" because a riel total divides back
+    // into a long USD fraction (93,000៛ / 4100).
+    return converted.toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+    });
 }
 
 /**
@@ -6625,6 +6693,12 @@ function updateOrderDetailActionLabel(header) {
 async function viewSaleOrderLine(id) {
     try {
         currentSaleOrderId = id;
+        // The print buttons in this modal read selectedSaleOrderId. Opening the
+        // modal from a row sets it, but the Livewire "view-line-sale-order"
+        // event calls straight in here without selecting a row — leaving those
+        // buttons pointing at a stale order, or refusing with "Please select a
+        // sale order first". The order being viewed IS the selected one.
+        selectedSaleOrderId = id;
 
         const modal = document.getElementById("saleOrderLineModal");
         modal.classList.remove("hidden");
@@ -7273,9 +7347,7 @@ function submitSaleOrder(document_status, btn = null) {
             document.getElementById("so_pay_other")?.value || 0,
         );
 
-        const factor = parseFloat(
-            document.querySelector("#currency_display_factor")?.value || 1,
-        );
+        const factor = rielFactor();
 
         const paidAmount = payUSD + payOther / factor;
 
@@ -7477,32 +7549,45 @@ function fillSaleOrderModal(data = {}) {
     document.getElementById("so_delivery_dateInput").value =
         data.delivery_date ?? "";
 
-    const factor = parseFloat(
-        document.querySelector("#currency_display_factor")?.value || 1,
-    );
+    const factor = rielFactor();
     const currency =
         document.querySelector("#currency_display_symbol")?.value || "$";
 
     const grandTotal =
         parseFloat(data.grand_total ?? data.total_amount ?? 0) || 0;
 
-    let convertedTotal = grandTotal * factor;
-    convertedTotal =
-        currency === "៛"
-            ? convertedTotal.toFixed(0)
-            : convertedTotal.toFixed(2);
+    // Snap to the 100៛ grid and group the thousands, the same as the new-order
+    // path — this used to print the raw product, e.g. "623478 ៛".
+    const convertedTotal = roundDisplay(grandTotal * factor, currency);
 
     document.getElementById("so_payment_method").value =
         data.payment_method ?? "ABA";
 
-    document.getElementById("paid_amount").value = data.paid_amount ?? 0;
+    const paidAmount = parseFloat(data.paid_amount ?? 0) || 0;
+    const paidEl = document.getElementById("paid_amount");
+    // The exact figure drives the arithmetic, the rounded one is what's read on
+    // screen — keeping both stops "150.000000" showing while still balancing to
+    // the stored precision.
+    paidEl.dataset.amount = paidAmount;
+    paidEl.value = paidAmount.toFixed(2);
 
     document.getElementById("so_pay_usd").value = 0;
     document.getElementById("so_pay_other").value = 0;
 
-    document.getElementById("so_display_pay_amount").value = grandTotal;
-    document.getElementById("so_display_pay_amount_converted").value =
-        convertedTotal + " " + currency;
+    // updateSaleOrderRemaining falls back to #so_display_pay_amount when
+    // #total_amount is empty, and loading a saved order never filled it — so
+    // the formatted 2-dp value became the amount owed and lost the fractional
+    // riel. Publish the exact total here and format only what's displayed.
+    const totalEl = document.querySelector("#total_amount");
+    if (totalEl) totalEl.value = grandTotal;
+
+    const dueEl = document.getElementById("so_display_pay_amount");
+    dueEl.dataset.amount = grandTotal;
+    dueEl.value = grandTotal.toFixed(2) + " $";
+
+    const dueCvtEl = document.getElementById("so_display_pay_amount_converted");
+    dueCvtEl.dataset.amount = convertedTotal;
+    dueCvtEl.value = convertedTotal.toLocaleString("en-US") + " " + currency;
 
     document.getElementById("so_customer_type").value =
         data.customer_type ?? "Take-Away";
@@ -7563,9 +7648,7 @@ function Confirm_update_Sale_Order() {
         return;
     }
 
-    const factor = parseFloat(
-        document.querySelector("#currency_display_factor")?.value || 1,
-    );
+    const factor = rielFactor();
 
     const payUSD = parseFloat(
         document.getElementById("so_pay_usd")?.value || 0,

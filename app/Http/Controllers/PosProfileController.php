@@ -11,11 +11,11 @@ class PosProfileController extends Controller
     // There's one company, not one profile per user — a user with their own
     // saved row sees that, but anyone else (any user granted company_profile.*
     // who never saved their own) falls back to the shared one instead of
-    // seeing blank fields.
+    // seeing blank fields. PosProfile::forUser applies the same rule to the
+    // printed documents, which used to skip the fallback entirely.
     private function resolveProfile(): ?PosProfile
     {
-        return PosProfile::where('user_report', Auth::id())->first()
-            ?? PosProfile::first();
+        return PosProfile::forUser(Auth::id());
     }
 
     public function show()

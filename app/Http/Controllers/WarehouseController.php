@@ -6,6 +6,7 @@ use App\Models\Category;
 use App\Models\ItemLedgerEntry;
 use App\Models\Product;
 use App\Models\PurchaseLine;
+use App\Models\Serial_No;
 use App\Models\Warehouse;
 use App\Models\WarehouseProduct;
 
@@ -296,8 +297,12 @@ class WarehouseController extends Controller
     {
         $limit = $request->query('limit', 50);
 
+        // Grouped per product PER WAREHOUSE: a product held in three warehouses
+        // is three rows, so the quantity on each row is the stock actually in
+        // that warehouse rather than a company-wide total you cannot act on.
         $query = \DB::table('warehouse_product')
             ->join('product', 'product.id', '=', 'warehouse_product.product_id')
+            ->join('warehouses', 'warehouses.id', '=', 'warehouse_product.warehouse_id')
             ->leftJoin('categories', 'categories.id', '=', 'product.category_id')
             ->groupBy(
                 'product.id',
@@ -305,9 +310,12 @@ class WarehouseController extends Controller
                 'product.code',
                 'product.unit',
                 'product.status',
-                'categories.name'
+                'categories.name',
+                'warehouse_product.warehouse_id',
+                'warehouses.name'
             )
             ->orderBy('product.name')
+            ->orderBy('warehouses.name')
             ->select(
                 'product.id as product_id',
                 'product.name as product_name',
@@ -315,8 +323,9 @@ class WarehouseController extends Controller
                 'product.unit',
                 'product.status',
                 'categories.name as category_name',
+                'warehouse_product.warehouse_id',
+                'warehouses.name as warehouse_name',
                 \DB::raw('SUM(warehouse_product.quantity) as total_quantity'),
-                \DB::raw('COUNT(DISTINCT warehouse_product.warehouse_id) as warehouse_count'),
                 \DB::raw('COUNT(*) as lot_count')
             );
 
@@ -358,8 +367,12 @@ class WarehouseController extends Controller
             'unit'            => $p->unit,
             'status'          => (int) $p->status,
             'category_name'   => $p->category_name,
+            'warehouse_id'    => (int) $p->warehouse_id,
+            'warehouse_name'  => $p->warehouse_name,
             'total_quantity'  => (float) $p->total_quantity,
-            'warehouse_count' => (int) $p->warehouse_count,
+            // Each row is now a single warehouse, so this is always 1. Kept so
+            // any caller still reading it keeps working rather than showing blank.
+            'warehouse_count' => 1,
             'lot_count'       => (int) $p->lot_count,
         ];
 
@@ -508,22 +521,8 @@ class WarehouseController extends Controller
             $destBinName = $destBinId ? optional(\App\Models\Bin::find($destBinId))->name : null;
 
             // Transfer No
-            $year = now()->format('y');
-            $prefix = 'TO' . $year . '-';
 
-            $lastTransfer = ItemLedgerEntry::whereIn('document_type', [
-                'Transfer Shipment',
-                'Transfer Receipt',
-            ])
-                ->where('document_no', 'like', $prefix . '%')
-                ->orderByDesc('id')
-                ->first();
-
-            $nextNumber = $lastTransfer
-                ? ((int) substr($lastTransfer->document_no, strlen($prefix))) + 1
-                : 1;
-
-            $transferNo = $prefix . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+            $transferNo = Serial_No::next('transfer');
 
             // Target row
             $targetRow = WarehouseProduct::where('product_id', $product->id)
@@ -619,6 +618,9 @@ class WarehouseController extends Controller
                 'entry_type'         => 'negative',
 
                 'unit_cost'          => $unitCost,
+                // Inventory value of this movement. Positive on both legs: the
+                // shipment and the receipt are each worth the same stock.
+                'cost_amount'        => round(abs($transferQty) * abs($unitCost), 6),
                 'unit_price'         => $product->sell_price ?? 0,
                 'sell_price'         => $product->sell_price ?? 0,
 
@@ -674,6 +676,9 @@ class WarehouseController extends Controller
                 'entry_type'         => 'positive',
 
                 'unit_cost'          => $unitCost,
+                // Inventory value of this movement. Positive on both legs: the
+                // shipment and the receipt are each worth the same stock.
+                'cost_amount'        => round(abs($transferQty) * abs($unitCost), 6),
                 'unit_price'         => $product->sell_price ?? 0,
                 'sell_price'         => $product->sell_price ?? 0,
 
@@ -800,22 +805,7 @@ class WarehouseController extends Controller
                 ], 422);
             }
 
-            $year = now()->format('y');
-            $prefix = 'TO' . $year . '-';
-
-            $lastTransfer = ItemLedgerEntry::whereIn('document_type', [
-                'Transfer Shipment',
-                'Transfer Receipt',
-            ])
-                ->where('document_no', 'like', $prefix . '%')
-                ->orderByDesc('id')
-                ->first();
-
-            $nextNumber = $lastTransfer
-                ? ((int) substr($lastTransfer->document_no, strlen($prefix))) + 1
-                : 1;
-
-            $transferNo = $prefix . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+            $transferNo = Serial_No::next('transfer');
 
             $lotsMoved = 0;
 
@@ -958,6 +948,9 @@ class WarehouseController extends Controller
             'entry_type'         => 'negative',
 
             'unit_cost'          => $unitCost,
+            // Inventory value of this movement. Positive on both legs: the
+            // shipment and the receipt are each worth the same stock.
+            'cost_amount'        => round(abs($transferQty) * abs($unitCost), 6),
             'unit_price'         => $product->sell_price ?? 0,
             'sell_price'         => $product->sell_price ?? 0,
 
@@ -1010,6 +1003,9 @@ class WarehouseController extends Controller
             'entry_type'         => 'positive',
 
             'unit_cost'          => $unitCost,
+            // Inventory value of this movement. Positive on both legs: the
+            // shipment and the receipt are each worth the same stock.
+            'cost_amount'        => round(abs($transferQty) * abs($unitCost), 6),
             'unit_price'         => $product->sell_price ?? 0,
             'sell_price'         => $product->sell_price ?? 0,
 

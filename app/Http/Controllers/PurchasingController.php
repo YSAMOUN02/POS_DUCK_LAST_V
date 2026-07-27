@@ -96,7 +96,7 @@ class PurchasingController extends Controller
         $factor = $currency_default ? $currency_default->factor : 1;
         $currency_name = $currency_default ? $currency_default->code : 'USD';
 
-        $posInfoForPrint = PosProfile::where('user_report', Auth::id())->first();
+        $posInfoForPrint = PosProfile::forUser(Auth::id());
         $posInfoForPrint = $posInfoForPrint ? $posInfoForPrint->toArray() : [];
         $posInfoForPrint['logo_url'] = \App\Http\Controllers\PosProfileController::logoUrl();
 

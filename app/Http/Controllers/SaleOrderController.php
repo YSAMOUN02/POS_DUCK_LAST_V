@@ -240,14 +240,20 @@ public function getSaleOrders(Request $request)
                 'updated_by' => Auth::user()->username ?? 'System',
             ];
 
+            // Cancelled and Returned both close the order out, so nothing is
+            // still collectable on it. Without zeroing the balance the list kept
+            // showing an outstanding amount against an order nobody will ever
+            // pay — and it counted toward receivables.
             if ($request->status === 'Cancelled') {
                 $updateData['payment_status'] = 'N/A';
                 $updateData['delivery_status'] = 'N/A';
+                $updateData['balance_amount'] = 0;
             }
 
             if ($request->status === 'Returned') {
                 $updateData['payment_status'] = 'Refunded';
                 $updateData['delivery_status'] = 'Returned';
+                $updateData['balance_amount'] = 0;
             }
 
             $saleOrder->update($updateData);

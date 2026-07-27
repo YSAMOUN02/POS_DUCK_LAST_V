@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\ItemLedgerEntry;
+use App\Models\WarehouseProduct;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -313,21 +314,64 @@ class GainCostController extends Controller
 
     /** Current stock = purchase/receipt lots that still have quantity remaining.
      *  Snapshot: filtered by ITEM / WAREHOUSE / CATEGORY only — no date, payment, or user. */
+    /**
+     * Stock on hand, read from warehouse_product.
+     *
+     * This used to sum item_ledger_entries.remaining_quantity over positive
+     * entries. That is a running figure maintained per ledger row, so it drifts
+     * from the stock the rest of the app actually sells against — warehouse_product
+     * IS the stock, and its per-lot `cost` is what the lot is worth.
+     *
+     * Columns are aliased to the names the callers already use (qty_on_hand /
+     * unit_cost_val / expire_date / warehouse_name / item_code / unit) so the
+     * selects downstream read the same regardless of which table backs them.
+     */
     private function stockScope()
     {
-        return ItemLedgerEntry::query()
-            ->leftJoin('product as p', 'p.id', '=', 'item_ledger_entries.product_id')
-            ->where('item_ledger_entries.entry_type', $this->purchaseEntryType)
-            ->where('item_ledger_entries.remaining_quantity', '<>', 0)
+        return WarehouseProduct::query()
+            ->from('warehouse_product as wp')
+            ->leftJoin('product as p', 'p.id', '=', 'wp.product_id')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'wp.warehouse_id')
+            ->where('wp.quantity', '<>', 0)
             ->when($this->crit['warehouse'] ?? null, function ($q, $v) {
-                $q->where('item_ledger_entries.warehouse_id', $v);
+                $q->where('wp.warehouse_id', $v);
             })
             ->when($this->crit['category'] ?? null, function ($q, $v) {
                 $q->where('p.category_name', $v);
             })
             ->when($this->crit['product'] ?? null, function ($q, $v) {
-                $q->where('item_ledger_entries.product_id', $v);
+                $q->where('wp.product_id', $v);
             });
+    }
+
+    /**
+     * Money expression for stock figures.
+     *
+     * conv() multiplies by each ROW's factor, which only works on the ledger —
+     * warehouse_product stores no factor, because a lot sitting in a warehouse
+     * has no exchange rate of its own. Stock on hand is therefore valued at the
+     * shop's current rate, which is also the honest answer to "what is this
+     * worth now" rather than "what was it worth when it was bought".
+     */
+    private function convStock(string $amount): string
+    {
+        if (strtoupper($this->disp['code']) === strtoupper($this->baseCurrency)) {
+            return '(' . $amount . ')';
+        }
+
+        $rate = (float) (\App\Models\Currency::where('is_default', 1)->value('factor') ?: 1);
+
+        return '((' . $amount . ') * ' . $rate . ')';
+    }
+
+    /** Live shop rate used by convStock(), for PHP-side conversion of stock rows. */
+    private function stockRate(): float
+    {
+        if (strtoupper($this->disp['code']) === strtoupper($this->baseCurrency)) {
+            return 1.0;
+        }
+
+        return (float) (\App\Models\Currency::where('is_default', 1)->value('factor') ?: 1);
     }
    private function sales(string $from, string $to, ?string $pay)
     {
@@ -1143,15 +1187,19 @@ class GainCostController extends Controller
     /** Lots on hand for one product — lot, location, cost, value. */
     private function detailStockItem($id): array
     {
+        // factor is the live shop rate, not a per-row one: warehouse_product
+        // has no factor column (see convStock).
+        $stockRate = $this->stockRate();
+
         $rows = $this->stockScope()
-            ->where('item_ledger_entries.product_id', $id)
-            ->orderBy('item_ledger_entries.lot')
+            ->where('wp.product_id', $id)
+            ->orderBy('wp.lot')
             ->selectRaw('
-            p.name as pname, item_ledger_entries.item_code as code,
-            item_ledger_entries.lot as lot, item_ledger_entries.warehouse_name as wh,
-            item_ledger_entries.expire_date as expire,
-            item_ledger_entries.remaining_quantity as qty, item_ledger_entries.unit as unit,
-            item_ledger_entries.unit_cost as cost, item_ledger_entries.factor as factor
+            p.name as pname, p.code as code,
+            wp.lot as lot, w.name as wh,
+            wp.expire as expire,
+            wp.quantity as qty, p.unit as unit,
+            wp.cost as cost, ' . $stockRate . ' as factor
         ')->get();
 
         $name = $rows->first()->pname ?? ('Product #' . $id);
@@ -1590,20 +1638,20 @@ class GainCostController extends Controller
     {
         $this->setDisplay($r);
         $this->filters($r); // sets crit; stock uses item/warehouse/category only (no date/payment/user)
-        $valExpr = $this->conv('item_ledger_entries.remaining_quantity * item_ledger_entries.unit_cost');
+        $valExpr = $this->convStock('wp.quantity * wp.cost');
 
         $tot = $this->stockScope()->selectRaw("
-            SUM(remaining_quantity) as qty, SUM($valExpr) as value,
-            COUNT(DISTINCT product_id) as items, COUNT(*) as lots
+            SUM(wp.quantity) as qty, SUM($valExpr) as value,
+            COUNT(DISTINCT wp.product_id) as items, COUNT(*) as lots
         ")->first();
 
         $items = $this->stockScope()
-            ->groupBy('item_ledger_entries.product_id')
+            ->groupBy('wp.product_id')
             ->selectRaw("
-        item_ledger_entries.product_id,
+        wp.product_id,
         MAX(p.name) as name,
         MAX(p.code) as code,
-        SUM(item_ledger_entries.remaining_quantity) as qty,
+        SUM(wp.quantity) as qty,
         SUM($valExpr) as value
     ")
             ->orderByRaw("SUM($valExpr) DESC")
@@ -1642,16 +1690,18 @@ class GainCostController extends Controller
         $this->setDisplay($r);
         $this->filters($r);
         $code = $this->disp['code'];
-        $valExpr  = $this->conv('remaining_quantity * unit_cost');
-        $costExpr = $this->conv('unit_cost');
+        $valExpr  = $this->convStock('wp.quantity * wp.cost');
+        $costExpr = $this->convStock('wp.cost');
 
-        $base = $this->stockScope()->orderBy('name')->orderBy('lot')->selectRaw("
-            item_code as code, name as product, variant as variant, category_name as category,
-            warehouse_name as warehouse, lot as lot, expire_date as expire,
-            remaining_quantity as qty, unit as unit, $costExpr as cost, $valExpr as value
+        $base = $this->stockScope()->orderBy('p.name')->orderBy('wp.lot')->selectRaw("
+            p.code as code, p.name as product, p.variant as variant, p.category_name as category,
+            w.name as warehouse, wp.lot as lot, wp.expire as expire,
+            wp.quantity as qty, p.unit as unit, $costExpr as cost, $valExpr as value
         ");
 
-        return response()->streamDownload(function () use ($base) {
+        // $code has to be captured: without it the closure saw an undefined
+        // variable and the header shipped as "Unit Cost ()" with no currency.
+        return response()->streamDownload(function () use ($base, $code) {
             $out = fopen('php://output', 'w');
             fprintf($out, chr(0xEF) . chr(0xBB) . chr(0xBF));
             fputcsv($out, ['Item Code', 'Product', 'Variant', 'Category', 'Warehouse', 'Lot', 'Expiry', 'Qty on Hand', 'Unit', "Unit Cost ($code)", "Stock Value ($code)"]);
@@ -2101,20 +2151,20 @@ class GainCostController extends Controller
     private function xlStock(Worksheet $sh): void
     {
         $sh->setTitle('Stock');
-        $valExpr  = $this->conv('item_ledger_entries.remaining_quantity * item_ledger_entries.unit_cost');
-        $costExpr = $this->conv('item_ledger_entries.unit_cost');
+        $valExpr  = $this->convStock('wp.quantity * wp.cost');
+        $costExpr = $this->convStock('wp.cost');
         $rows = $this->stockScope()
-            ->orderBy('p.name')->orderBy('item_ledger_entries.lot')
+            ->orderBy('p.name')->orderBy('wp.lot')
             ->selectRaw("
-                item_ledger_entries.item_code as code,
+                p.code as code,
                 p.name as product,
-                item_ledger_entries.variant as variant,
+                p.variant as variant,
                 p.category_name as category,
-                item_ledger_entries.warehouse_name as warehouse,
-                item_ledger_entries.lot as lot,
-                item_ledger_entries.expire_date as expire,
-                item_ledger_entries.remaining_quantity as qty,
-                item_ledger_entries.unit as unit,
+                w.name as warehouse,
+                wp.lot as lot,
+                wp.expire as expire,
+                wp.quantity as qty,
+                p.unit as unit,
                 $costExpr as cost,
                 $valExpr as value
             ")->get();
@@ -2295,8 +2345,8 @@ class GainCostController extends Controller
         $k = $this->kpis($from, $to, $pay);
         $tradingNet = $k['net'];
         // closing inventory value = current stock at cost (already reflects adjustments)
-        $valExpr = $this->conv('item_ledger_entries.remaining_quantity * item_ledger_entries.unit_cost');
-        $inv = $this->stockScope()->selectRaw("SUM($valExpr) as v, SUM(item_ledger_entries.remaining_quantity) as q, COUNT(*) as lots")->first();
+        $valExpr = $this->convStock('wp.quantity * wp.cost');
+        $inv = $this->stockScope()->selectRaw("SUM($valExpr) as v, SUM(wp.quantity) as q, COUNT(*) as lots")->first();
 
         return [
             'inventoryValue' => round((float) ($inv->v ?? 0), 2),
@@ -2376,12 +2426,12 @@ class GainCostController extends Controller
     {
         $rows = $this->stockScope()->selectRaw("
     p.name as p_name,
-    item_ledger_entries.item_code as code,
-    item_ledger_entries.warehouse_name as wh,
-    item_ledger_entries.lot as lot,
-    item_ledger_entries.remaining_quantity as qty,
-    item_ledger_entries.unit_cost as unit_cost,
-    item_ledger_entries.factor as factor
+    p.code as code,
+    w.name as wh,
+    wp.lot as lot,
+    wp.quantity as qty,
+    wp.cost as unit_cost,
+    " . $this->stockRate() . " as factor
 ")->get()->map(function ($l) {
             $qty = (float) $l->qty;
             return (object) [

@@ -43,6 +43,10 @@ class ItemLedgerEntry extends Model
         'entry_type',
 
         'unit_cost',
+        // Inventory value of the movement: |quantity| x |unit_cost|, always
+        // positive. Sales value stays in line_amount / net_amount /
+        // grand_total_amount — this column is the cost side only.
+        'cost_amount',
         'unit_price',
         'sell_price',
         'discount_percent',

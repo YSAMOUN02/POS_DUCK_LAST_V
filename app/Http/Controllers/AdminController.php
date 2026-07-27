@@ -87,7 +87,7 @@ class AdminController extends Controller
         $currency_name = $currency_default ? $currency_default->code : 'USD';
 
 
-         $posInfoForPrint = PosProfile::where('user_report', auth()->id())->first();
+         $posInfoForPrint = PosProfile::forUser(auth()->id());
         $posInfoForPrint = $posInfoForPrint ? $posInfoForPrint->toArray() : [];
         $posInfoForPrint['logo_url'] = \App\Http\Controllers\PosProfileController::logoUrl();
 
