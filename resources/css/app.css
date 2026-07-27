@@ -1,0 +1,111 @@
+@import "tailwindcss";
+@import "flowbite/src/themes/default";
+@plugin "flowbite/plugin";
+@source "../../node_modules/flowbite";
+
+@import "../../vendor/livewire/flux/dist/flux.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+@import "../../vendor/livewire/flux/dist/flux.css";
+@theme {
+    --font-sans: Inter, sans-serif;
+}
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+@source '../**/*.blade.php';
+@source '../**/*.js';
+@source '../../public/assets/js/*.js';
+
+@theme {
+    --font-sans:
+        "Instrument Sans", ui-sans-serif, system-ui, sans-serif,
+        "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
+        "Noto Color Emoji";
+}
+
+/* =====================================================
+   MODAL TEMPLATES — one shared look for every Sale modal,
+   one distinct-but-consistent look for every Purchase modal.
+   ===================================================== */
+@layer components {
+    /* NOTE: these intentionally do NOT include Tailwind's `hidden` utility.
+       Every modal in the markup carries a literal `hidden` class alongside
+       whichever of these it uses; JS shows/hides it via the normal
+       classList.remove("hidden") / classList.add("hidden") pattern used
+       throughout this app. Baking `hidden` into the @apply here would make
+       it permanent — since a plain classList.remove("hidden") call has no
+       literal "hidden" token left on the element to strip, the modal would
+       never be able to become visible again. `flex` is baked in instead,
+       so removing the literal `hidden` class is all a caller needs to do. */
+    /* Overlays are mobile-first: on a phone a tall modal is pinned to the top
+       and the overlay itself scrolls (`items-start` + `overflow-y-auto`), so the
+       bottom of a long form — Save / Confirm / Checkout — is always reachable.
+       With `items-center` and no scroll, anything taller than the viewport had
+       its footer buttons cut off with no way to get to them. From `sm:` up the
+       original centred look is restored. Padding is tighter on small screens so
+       narrow phones don't lose ~32px of usable width to the backdrop gutter. */
+
+    /* ---- Sale template (cool slate/blue identity) ---- */
+    .modal-overlay-sale { @apply fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto overscroll-contain; }
+    .modal-overlay-sale-stacked { @apply fixed inset-0 z-[60] flex items-start sm:items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto overscroll-contain; }
+    .modal-overlay-sale-top { @apply fixed inset-0 z-[70] flex items-start sm:items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto overscroll-contain; }
+    .modal-card-sale { @apply w-full bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col; }
+    .modal-header-sale { @apply flex items-center justify-between gap-2 sm:gap-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 px-3 py-3 sm:px-6 sm:py-5 shrink-0; }
+    .modal-icon-badge-sale { @apply h-9 w-9 sm:h-11 sm:w-11 rounded-2xl bg-white/10 flex items-center justify-center text-sky-300 shrink-0; }
+
+    /* ---- Purchase template (matches the Sale/Item Ledger Entry slate identity) ---- */
+    .modal-overlay-purchase { @apply fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto overscroll-contain; }
+    .modal-overlay-purchase-stacked { @apply fixed inset-0 z-[60] flex items-start sm:items-center justify-center bg-black/60 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto overscroll-contain; }
+    .modal-card-purchase { @apply w-full bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col; }
+    .modal-header-purchase { @apply flex items-center justify-between gap-2 sm:gap-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 px-3 py-3 sm:px-6 sm:py-5 shrink-0; }
+    .modal-icon-badge-purchase { @apply h-9 w-9 sm:h-11 sm:w-11 rounded-2xl bg-white/15 flex items-center justify-center text-sky-300 shrink-0; }
+
+    /* ---- Shared close button + shared small "confirm/alert" card (both sides) ---- */
+    .modal-close-btn { @apply flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-xl text-white transition hover:bg-red-500 shrink-0; }
+    .modal-overlay-alert { @apply fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/50 backdrop-blur-sm p-2 sm:p-4 overflow-y-auto overscroll-contain; }
+    .modal-card-alert { @apply w-full max-w-sm bg-white rounded-2xl shadow-2xl p-4 sm:p-6; }
+
+    /* Any table that would be wider than the phone screen scrolls inside its own
+       box instead of stretching the modal (which pushed action buttons off-screen). */
+    .table-scroll-x { @apply w-full overflow-x-auto; -webkit-overflow-scrolling: touch; }
+}
+
+/* =====================================================
+   PHONE / TABLET ADJUSTMENTS
+   Modals in the markup hard-code desktop heights such as h-[98vh] together
+   with min-h/max-h of the same value. On a phone, browser chrome (URL bar,
+   toolbars) means 98vh is often taller than what is actually visible, and a
+   locked min-height cannot shrink — so the footer sat under the chrome. These
+   release the fixed height on small screens and let the card size to content
+   up to the real viewport height.
+   ===================================================== */
+@media (max-width: 640px) {
+    [class*="modal-card-"] {
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: none !important;
+    }
+
+    /* Touch targets: keep interactive controls at the ~44px Apple/Google
+       minimum so buttons and inputs in transaction forms are tappable. */
+    .modal-card-sale button:not(.modal-close-btn),
+    .modal-card-purchase button:not(.modal-close-btn),
+    .modal-card-sale select,
+    .modal-card-purchase select,
+    .modal-card-sale input:not([type="checkbox"]):not([type="radio"]),
+    .modal-card-purchase input:not([type="checkbox"]):not([type="radio"]) {
+        min-height: 40px;
+    }
+
+    /* Stop iOS Safari zooming the whole page when a small input is focused —
+       it needs >=16px font to leave the viewport alone. */
+    .modal-card-sale input,
+    .modal-card-sale select,
+    .modal-card-sale textarea,
+    .modal-card-purchase input,
+    .modal-card-purchase select,
+    .modal-card-purchase textarea {
+        font-size: 16px;
+    }
+}

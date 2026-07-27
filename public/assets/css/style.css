@@ -1,0 +1,3614 @@
+/* @font-face {
+    font-family: "Noto Serif Khmer";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("../font/khmer.woff2") format("woff2");
+    unicode-range: U+1780-17FF, U+19E0-19FF, U+200C-200D, U+25CC;
+}
+
+@font-face {
+    font-family: "Noto Serif Khmer";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("../font/latinex.woff2") format("woff2");
+    unicode-range:
+        U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+        U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
+        U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+    font-family: "Noto Serif Khmer";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("../font/latin.woff2") format("woff2");
+    unicode-range:
+        U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+        U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+        U+2212, U+2215, U+FEFF, U+FFFD;
+} */
+
+* {
+    margin: 0;
+    box-sizing: border-box;
+    font-family: "Noto Serif Khmer", serif;
+}
+
+
+
+@keyframes pageEnter {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+main {
+    position: relative;
+    max-height: 95vh;
+    overflow: hidden;
+
+
+}
+
+#toggleSidebar {
+    position: fixed;
+    top: 50%;
+    right: 0;
+    transform: translateY(-50%);
+    z-index: 1000;
+
+    font-size: 25px;
+
+    width: 20px;
+    height: 60px;
+
+    background: #2563eb;
+    /* blue */
+    color: white;
+
+    border-radius: 30px 0 0 30px;
+    /* round LEFT only */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    cursor: pointer;
+}
+
+#container {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    /* enforce flex even if a class gets lost */
+}
+
+#sidebar {
+    flex: 0 0 auto;
+    /* basis defers to width (Tailwind class / resize JS), never pins 380px */
+    max-width: 80vw;
+    /* was 700px */
+    min-width: 280px;
+    background: #fff;
+}
+
+#inner-sidebar {
+    height: 90vh !important;
+    overflow: auto;
+    background-color: white;
+    width: 100%;
+    /* follow sidebar width */
+}
+
+#screen-only {
+    width: 100%;
+
+    overflow: hidden;
+}
+
+#tab-content {
+    height: 90vh;
+    overflow: auto;
+}
+
+/* slim styled scrollbar for product grid */
+#tab-content {
+    scrollbar-width: thin;
+    /* Firefox */
+    scrollbar-color: rgba(124, 92, 252, .45) transparent;
+    scroll-behavior: smooth;
+}
+
+/* Chrome / Edge / Safari */
+#tab-content::-webkit-scrollbar {
+    width: 8px;
+}
+
+#tab-content::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+#tab-content::-webkit-scrollbar-thumb {
+    background: rgba(124, 92, 252, .35);
+    /* matches your purple card theme */
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+    /* inset look */
+}
+
+#tab-content::-webkit-scrollbar-thumb:hover {
+    background: rgba(124, 92, 252, .65);
+    background-clip: content-box;
+}
+
+#sidebar.hidden {
+    transform: translateX(100%);
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* collapsed state */
+#sidebar.collapsed {
+    width: 0;
+    opacity: 0;
+    overflow: hidden;
+}
+
+#mainContent {
+    flex: 1 1 auto;
+    /* take all remaining space */
+    min-width: 0;
+    /* CRITICAL: lets it shrink, otherwise sidebar "moves alone" */
+    overflow: hidden;
+}
+
+#mainContent.expanded {
+    width: 100%;
+}
+
+#resizer {
+    flex: 0 0 6px;
+    /* fixed 6px wide, never grows */
+    cursor: col-resize;
+    background: #e5e7eb;
+    position: relative;
+    z-index: 20;
+    transition: background 0.15s ease;
+}
+
+#resizer:hover,
+#resizer.active {
+    background: #60a5fa;
+}
+
+.resizer-handle {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 2px;
+    height: 40px;
+    border-radius: 999px;
+    background: #9ca3af;
+}
+
+/* your existing toggle button */
+#toggleSidebar {
+    position: fixed;
+    top: 5%;
+    right: 0;
+    transform: translateY(-50%);
+    z-index: 1000;
+}
+
+.card_style {
+    isolation: isolate;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+    min-width: 0;
+    min-height: 150px;
+    transition:
+        transform 0.25s ease,
+        box-shadow 0.25s ease,
+        border-color 0.25s ease,
+        background-color 0.25s ease;
+}
+
+.card_style {
+    position: relative;
+}
+
+.info {
+    position: absolute;
+    top: 20px;
+    right: 10px;
+    border: #eff6ff;
+    font-size: 20px;
+}
+
+.card_style:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    background-color: #f8fafc;
+    /* soft */
+}
+
+.card_style:hover img {
+    transform: scale(1.05);
+}
+
+.card_style.active {
+    border-color: #2563eb;
+    background-color: #eff6ff;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+.card_style:active {
+    transform: scale(0.98);
+}
+
+.cart-burst {
+    position: fixed;
+    pointer-events: none;
+    z-index: 9999;
+}
+
+/* ===== Customer display toggle ===== */
+.cd-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+    color: #6b7280;
+}
+
+.cd-toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    padding: 0 !important;
+    /* beat the global input padding rule */
+}
+
+.cd-track {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 20px;
+    border-radius: 999px;
+    background: #d1d5db;
+    transition: background 0.2s ease;
+    flex-shrink: 0;
+}
+
+.cd-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+    transition: left 0.2s ease;
+}
+
+.cd-toggle input:checked+.cd-track {
+    background: #22c55e;
+}
+
+.cd-toggle input:checked+.cd-track .cd-knob {
+    left: 22px;
+}
+
+.cart-icon {
+    position: absolute;
+    font-size: 26px;
+    /* 🔥 BIGGER */
+    animation: pop 0.8s ease-out forwards;
+}
+
+/* ===== Theme toggle button ===== */
+.theme-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    color: #6b7280;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all .2s ease;
+}
+
+.theme-btn:hover {
+    color: #111827;
+    border-color: #d1d5db;
+}
+
+.theme-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 999px;
+    border: 1px solid #e5e7eb;
+    background: #fff;
+    color: #6b7280;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all .2s ease;
+}
+
+.theme-btn:hover {
+    color: #111827;
+    border-color: #d1d5db;
+}
+
+.theme-btn.dark-on {
+    background: #1e293b;
+    border-color: #334155;
+    color: #fbbf24;
+}
+
+/* 🛒 Cart = ORANGE */
+.cart-icon.cart {
+    color: #fb923c;
+    /* orange-400 */
+    text-shadow: 0 0 10px rgba(251, 146, 60, 0.8);
+}
+
+/* ➕ Plus = GREEN */
+.cart-icon.plus {
+    color: #22c55e;
+    /* green-500 */
+    text-shadow: 0 0 10px rgba(34, 197, 94, 0.8);
+}
+
+.screen-only {
+    width: 100%;
+    height: 80vh;
+
+    position: relative;
+}
+
+#header_invoice {
+    position: sticky;
+    background-color: rgb(255, 255, 255);
+    top: 0;
+    z-index: 999;
+}
+
+#total {
+    position: sticky;
+    background-color: rgb(255, 255, 255);
+    bottom: 0;
+    width: 100%;
+    height: auto;
+}
+
+.card {
+    border-bottom: 1px solid rgb(218, 218, 218);
+    background-color: rgb(247, 247, 247);
+}
+
+.list {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    width: 100%;
+    border: 1px solid #e5e7eb;
+    max-height: 260px;
+    /* taller: ~6-7 rows visible */
+    overflow-y: auto;
+    padding: 0;
+    margin: 4px 0 0;
+    list-style: none;
+    background: white;
+    z-index: 9999;
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+
+    /* slim styled scrollbar */
+    scrollbar-width: thin;
+    /* Firefox */
+    scrollbar-color: rgba(100, 116, 139, .5) transparent;
+}
+
+/* Chrome / Edge / Safari */
+.list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.list::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.list::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, .4);
+    border-radius: 9999px;
+}
+
+.list::-webkit-scrollbar-thumb:hover {
+    background: rgba(100, 116, 139, .7);
+}
+
+.hidden {
+    display: none;
+}
+
+#list_main {
+    position: relative;
+    /* needed for absolute ul to position correctly */
+    width: 300px;
+    /* same width as before */
+}
+
+.invoice-totals {
+    display: flex;
+    align-items: center;
+    justify-content: end;
+}
+
+#inner-sidebar {
+    height: 90vh !important;
+    overflow: auto;
+    background-color: white;
+}
+
+#invoice h1 {
+    font-size: 20px;
+}
+
+#invoice table th {
+    font-size: 10px;
+}
+
+#invoice table td {
+    font-size: 8px !important;
+}
+
+table td,
+table th {
+    padding: 2px 5px;
+}
+
+#logo {
+    width: 100px;
+}
+
+.animate-scaleUp {
+    animation: scaleUp 0.2s ease-out;
+}
+
+/* Vertical scrolling for report-modal tables is handled by each modal's
+   own flex-1 body wrapper, which correctly computes real available height
+   (viewport minus that modal's actual header/filter/footer size). This
+   class used to also impose its own fixed vh height, which conflicted
+   with that wrapper and — especially on shorter laptop screens — pushed
+   the footer/pagination out of view. Individual modals that need their
+   own explicit cap (e.g. the vendor list's inline max-h-[58vh]) still
+   apply it themselves; this shared class no longer overrides them. */
+.scroll_content_70 {
+}
+
+#Table-sale-list {
+    width: 100%;
+
+    border-collapse: collapse;
+    font-size: 13px;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Table header */
+#Table-sale-list thead th {
+    position: sticky;
+    /* header stays on top */
+    top: 0;
+    background-color: #f9fafb;
+    z-index: 10;
+    padding: 10px 8px;
+    /* more padding makes header taller */
+    text-align: left;
+}
+
+/* Table body rows */
+#Table-sale-list tbody tr {
+    height: auto;
+    /* let it grow if content bigger */
+    border-bottom: 1px solid #e5e7eb;
+    /* light row separator */
+}
+
+/* Table cells */
+#Table-sale-list td {
+    padding: 8px 6px;
+    /* better spacing inside cells */
+    vertical-align: middle;
+    /* aligns content nicely vertically */
+}
+
+/* Optional: alternate row color */
+#Table-sale-list tbody tr:nth-child(even) {
+    background-color: #f5f5f5;
+}
+
+#Table-sale-list thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 10;
+    background-color: rgb(20, 20, 99);
+    /* must have a background */
+    color: white;
+}
+
+#toastMessage {
+    z-index: 10000 !important;
+}
+
+/* sticky header */
+
+/* ===== Shared Table Styles ===== */
+#Table-sale-list-container {
+    max-height: 70vh;
+    overflow-y: auto;
+    /* vertical scroll */
+    overflow-x: hidden;
+    /* avoid horizontal scroll conflict */
+}
+
+#Table-sale-list {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+#Table-sale-list thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 10;
+    background-color: rgb(0, 0, 129);
+    /* must have background */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    padding: 5px 8px;
+}
+
+#Table-sale-list th:nth-child(2) {
+    position: sticky !important;
+    left: 0;
+    background-color: rgb(0, 0, 129);
+    /* must have background */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    color: white;
+    z-index: 999 !important;
+}
+
+#Table-sale-list td:nth-child(2) {
+    position: sticky !important;
+    left: 0;
+    background-color: rgb(255, 255, 255);
+    /* must have background */
+    z-index: 9 !important;
+}
+
+#Table-sale-list tbody td {
+    padding: 3px 8px;
+    border-bottom: 1px solid #ccc;
+}
+
+#Table-sale-list tbody tr:hover {
+    background-color: #f9f9f9;
+}
+
+/* Product Table  */
+/* ------------------------------------------------------------------------------ */
+/* Remove global box-shadow / border-radius for report table */
+#product_table {
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+#product_table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+#product_table thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 10;
+    background-color: rgb(0, 0, 129);
+    /* must have background */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    padding: 5px 8px;
+}
+
+#product_table th:nth-child(1) {
+    position: sticky !important;
+    left: 0;
+    background-color: rgb(0, 0, 129);
+    /* must have background */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    color: white;
+    z-index: 999 !important;
+}
+
+#product_table td:nth-child(1) {
+    position: sticky !important;
+    left: 0;
+    background-color: rgb(255, 255, 255);
+    /* must have background */
+    z-index: 9 !important;
+}
+
+#product_table th:nth-child(3) {
+    position: sticky !important;
+    left: 30px;
+    background-color: rgb(0, 0, 129);
+    /* must have background */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    color: white;
+    z-index: 999 !important;
+}
+
+#product_table td:nth-child(3) {
+    position: sticky !important;
+    left: 30px;
+    background-color: rgb(255, 255, 255);
+    /* must have background */
+    z-index: 9 !important;
+}
+
+#product_table tbody td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #ccc;
+}
+
+#product_table tbody tr:hover {
+    background-color: #f9f9f9;
+}
+
+/* Product Table  */
+/* ------------------------------------------------------------------------------ */
+/* Report Table Base */
+#wh-product {
+    width: 100%;
+
+    border-collapse: collapse;
+    font-size: 13px;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Table header */
+#wh-product thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 10;
+    background-color: rgb(0, 0, 129);
+    /* header bg */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    padding: 2px 8px;
+    line-height: 1.3;
+    font-size: 11px;
+    /* consistent padding */
+    white-space: nowrap;
+}
+
+/* Table body cells */
+#wh-product tbody td {
+    padding: 3px 8px;
+    /* consistent padding */
+    border-bottom: 1px solid #ccc;
+    vertical-align: middle;
+    /* center content vertically */
+    white-space: nowrap;
+}
+
+/* Table rows */
+#wh-product tbody tr {
+    height: auto;
+    /* allow growth for bigger content */
+}
+
+/* Right-align numeric columns */
+#wh-product tbody td.numeric {
+    text-align: right;
+}
+
+/* Hover effect */
+#wh-product tbody tr:hover {
+    background-color: #f9f9f9;
+}
+
+/* Optional: alternate row colors */
+#wh-product tbody tr:nth-child(even) {
+    background-color: #fefefe;
+}
+
+/* Scrollable container (if needed) */
+#wh-product-container {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* Optional: fix table width for horizontal scroll */
+#wh-product {
+    table-layout: auto;
+    /* auto or fixed depending on your preference */
+}
+
+/* ------------------------------------------------------------------------------ */
+
+/* Report Table Base */
+#user-table {
+    width: 100%;
+
+    border-collapse: collapse;
+    font-size: 13px;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Table header */
+#user-table thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 10;
+    background-color: rgb(0, 0, 129);
+    /* header bg */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    padding: 2px 8px;
+    line-height: 1.3;
+    font-size: 11px;
+    /* consistent padding */
+    white-space: nowrap;
+}
+
+/* Table body cells */
+#user-table tbody td {
+    padding: 3px 8px;
+    /* consistent padding */
+    border-bottom: 1px solid #ccc;
+    vertical-align: middle;
+    /* center content vertically */
+    white-space: nowrap;
+}
+
+/* Right-align numeric columns */
+#user-table tbody td.numeric {
+    text-align: right;
+}
+
+/* Hover effect */
+#user-table tbody tr:hover {
+    background-color: #f9f9f9;
+}
+
+/* Optional: alternate row colors */
+#user-table tbody tr:nth-child(even) {
+    background-color: #fefefe;
+}
+
+/* Scrollable container (if needed) */
+#user-table-container {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* Optional: fix table width for horizontal scroll */
+#user-table {
+    table-layout: auto;
+    /* auto or fixed depending on your preference */
+}
+
+/* ------------------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------------------ */
+
+/* Report Table Base */
+#customer-list {
+    width: 100%;
+    /* Table container min-height */
+    border-collapse: collapse;
+    font-size: 13px;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Table header */
+#customer-list thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 10;
+    background-color: rgb(0, 0, 129);
+    /* header bg */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    padding: 5px 10px;
+    /* consistent padding */
+    white-space: nowrap;
+}
+
+/* Table body cells */
+#customer-list tbody td {
+    padding: 4px 10px;
+    /* consistent padding */
+    border-bottom: 1px solid #ccc;
+    vertical-align: middle;
+    /* center content vertically */
+    white-space: nowrap;
+}
+
+/* Table rows */
+#customer-list tbody tr {
+    height: auto;
+    /* allow growth for bigger content */
+}
+
+/* Right-align numeric columns */
+#customer-list tbody td.numeric {
+    text-align: right;
+}
+
+/* Hover effect */
+#customer-list tbody tr:hover {
+    background-color: #f9f9f9;
+}
+
+/* Optional: alternate row colors */
+#customer-list tbody tr:nth-child(even) {
+    background-color: #fefefe;
+}
+
+/* Scrollable container (if needed) */
+#customer-list-container {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* Optional: fix table width for horizontal scroll */
+#customer-list {
+    table-layout: auto;
+    /* auto or fixed depending on your preference */
+}
+
+/* ------------------------------------------------------------------------------ */
+/* ------------------------------------------------------------------------------------- */
+/* Sale Order  */
+#Table-sale-order {
+    width: 100%;
+
+    border-collapse: collapse;
+    font-size: 13px;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Table header */
+#Table-sale-order thead th {
+    position: sticky;
+    /* header stays on top */
+    top: 0;
+    background-color: #f9fafb;
+    z-index: 10;
+    padding: 10px 8px;
+    /* more padding makes header taller */
+    text-align: left;
+}
+
+/* Table body rows */
+#Table-sale-order tbody tr {
+    height: auto;
+    /* let it grow if content bigger */
+    border-bottom: 1px solid #e5e7eb;
+    /* light row separator */
+}
+
+/* Table cells */
+#Table-sale-order td {
+    padding: 8px 6px;
+    /* better spacing inside cells */
+    vertical-align: middle;
+    /* aligns content nicely vertically */
+}
+
+/* Optional: alternate row color */
+#Table-sale-order tbody tr:nth-child(even) {
+    background-color: #f5f5f5;
+}
+
+#Table-sale-order thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 10;
+    background-color: rgb(20, 20, 99);
+    /* must have a background */
+    color: white;
+}
+
+#toastMessage {
+    z-index: 10000 !important;
+}
+
+/* sticky header */
+
+/* ===== Shared Table Styles ===== */
+#Table-sale-order-container {
+    max-height: 70vh;
+    overflow-y: auto;
+    /* vertical scroll */
+    overflow-x: hidden;
+    /* avoid horizontal scroll conflict */
+}
+
+#Table-sale-order {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+#Table-sale-order thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 10;
+    background-color: rgb(0, 0, 129);
+    /* must have background */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    padding: 5px 8px;
+}
+
+#Table-sale-order th:nth-child(2) {
+    position: sticky !important;
+    left: 0;
+    background-color: rgb(0, 0, 129);
+    /* must have background */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    color: white;
+    z-index: 999 !important;
+}
+
+#Table-sale-order td:nth-child(2) {
+    position: sticky !important;
+    left: 0;
+    background-color: rgb(255, 255, 255);
+    /* must have background */
+    z-index: 9 !important;
+}
+
+#Table-sale-order tbody td {
+    padding: 5px 8px;
+    border-bottom: 1px solid #ccc;
+}
+
+#Table-sale-order tbody tr:hover {
+    background-color: #f9f9f9;
+}
+
+
+
+/* ------------------------------------------------------------------------------ */
+
+/* Report Table Base */
+#vendor-list {
+    width: 100%;
+    /* Table container min-height */
+    border-collapse: collapse;
+    font-size: 13px;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Table header */
+#vendor-list thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 10;
+    background-color: rgb(0, 0, 129);
+    /* header bg */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    padding: 8px 10px;
+    /* consistent padding */
+    white-space: nowrap;
+}
+
+/* Table body cells */
+#vendor-list tbody td {
+    padding: 8px 10px;
+    /* consistent padding */
+    border-bottom: 1px solid #ccc;
+    vertical-align: middle;
+    /* center content vertically */
+    white-space: nowrap;
+}
+
+/* Table rows */
+#vendor-list tbody tr {
+    height: auto;
+    /* allow growth for bigger content */
+}
+
+/* Right-align numeric columns */
+#vendor-list tbody td.numeric {
+    text-align: right;
+}
+
+/* Hover effect */
+#vendor-list tbody tr:hover {
+    background-color: #f9f9f9;
+}
+
+/* Optional: alternate row colors */
+#vendor-list tbody tr:nth-child(even) {
+    background-color: #fefefe;
+}
+
+/* Scrollable container (if needed) */
+#vendor-list-container {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* Optional: fix table width for horizontal scroll */
+#vendor-list {
+    table-layout: auto;
+    /* auto or fixed depending on your preference */
+}
+
+/* ------------------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------------------ */
+
+/* Report Table Base */
+#Table-Purchase-list {
+    width: 100%;
+    /* Table container min-height */
+    border-collapse: collapse;
+    font-size: 13px;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Table header */
+#Table-Purchase-list thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 10;
+    background-color: rgb(0, 0, 129);
+    /* header bg */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    padding: 8px 10px;
+    /* consistent padding */
+    white-space: nowrap;
+}
+
+/* Table body cells */
+#Table-Purchase-list tbody td {
+    padding: 8px 10px;
+    /* consistent padding */
+    border-bottom: 1px solid #ccc;
+    vertical-align: middle;
+    /* center content vertically */
+    white-space: nowrap;
+}
+
+/* Table rows */
+#Table-Purchase-list tbody tr {
+    height: auto;
+    /* allow growth for bigger content */
+}
+
+/* Right-align numeric columns */
+#Table-Purchase-list tbody td.numeric {
+    text-align: right;
+}
+
+/* Hover effect */
+#Table-Purchase-list tbody tr:hover {
+    background-color: #f9f9f9;
+}
+
+/* Optional: alternate row colors */
+#Table-Purchase-list tbody tr:nth-child(even) {
+    background-color: #fefefe;
+}
+
+/* Scrollable container (if needed) */
+#Table-Purchase-list-container {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* Optional: fix table width for horizontal scroll */
+#Table-Purchase-list {
+    table-layout: auto;
+    /* auto or fixed depending on your preference */
+}
+
+/* ------------------------------------------------------------------------------ */
+
+
+
+
+#Table-item-ledger-entry {
+    width: 100%;
+
+    border-collapse: collapse;
+    font-size: 13px;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Table header */
+#Table-item-ledger-entry thead th {
+    position: sticky;
+    /* header stays on top */
+    top: 0;
+    background-color: #f9fafb;
+    z-index: 10;
+    padding: 2px 8px;
+    line-height: 1.3;
+    font-size: 11px;
+    /* more padding makes header taller */
+    text-align: left;
+}
+
+/* Table body rows */
+#Table-item-ledger-entry tbody tr {
+    height: auto;
+    /* let it grow if content bigger */
+    border-bottom: 1px solid #e5e7eb;
+    /* light row separator */
+}
+
+/* Table cells */
+#Table-item-ledger-entry td {
+    padding: 8px 6px;
+    /* better spacing inside cells */
+    vertical-align: middle;
+    /* aligns content nicely vertically */
+}
+
+/* Optional: alternate row color */
+#Table-item-ledger-entry tbody tr:nth-child(even) {
+    background-color: #f5f5f5;
+}
+
+#Table-item-ledger-entry thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 10;
+    background-color: rgb(20, 20, 99);
+    /* must have a background */
+    color: white;
+}
+
+#Table-item-ledger-entry th:nth-child(4) {
+    position: sticky !important;
+    left: 0;
+    background-color: rgb(0, 0, 129);
+    /* must have background */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    color: white;
+    z-index: 999 !important;
+}
+
+#Table-item-ledger-entry td:nth-child(4) {
+    position: sticky !important;
+    left: 0;
+    background-color: rgb(255, 255, 255);
+    /* must have background */
+    z-index: 9 !important;
+}
+
+/* -------------------------------------------------------- */
+
+
+
+
+
+
+
+
+
+/* ------------------------------------------------------------------------------ */
+
+/* Report Table Base */
+#Table-sale-list {
+    width: 100%;
+    /* Table container min-height */
+    border-collapse: collapse;
+    font-size: 13px;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Table header */
+#Table-sale-list thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 10;
+    background-color: rgb(0, 0, 129);
+    /* header bg */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    padding: 2px 8px;
+    line-height: 1.3;
+    font-size: 11px;
+    /* consistent padding */
+    white-space: nowrap;
+}
+
+/* Table body cells */
+#Table-sale-list tbody td {
+    padding: 3px 8px;
+    /* consistent padding */
+    border-bottom: 1px solid #ccc;
+    vertical-align: middle;
+    /* center content vertically */
+    white-space: nowrap;
+}
+
+/* Table rows */
+#Table-sale-list tbody tr {
+    height: auto;
+    /* allow growth for bigger content */
+}
+
+/* Right-align numeric columns */
+#Table-sale-list tbody td.numeric {
+    text-align: right;
+}
+
+/* Hover effect */
+#Table-sale-list tbody tr:hover {
+    background-color: #f9f9f9;
+}
+
+/* Optional: alternate row colors */
+#Table-sale-list tbody tr:nth-child(even) {
+    background-color: #fefefe;
+}
+
+/* Scrollable container (if needed) */
+#Table-sale-list-container {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* Optional: fix table width for horizontal scroll */
+#Table-sale-list {
+    table-layout: auto;
+    /* auto or fixed depending on your preference */
+}
+
+#Table-sale-list th:nth-child(3) {
+    position: sticky !important;
+    left: 0;
+    background-color: rgb(0, 0, 129);
+    /* must have background */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    color: white;
+    z-index: 999 !important;
+}
+
+#Table-sale-list td:nth-child(3) {
+    position: sticky !important;
+    left: 0;
+    background-color: rgb(255, 255, 255);
+    /* must have background */
+    z-index: 9 !important;
+
+}
+
+/* ------------------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------------------ */
+
+/* Report Table Base */
+#Table-expense-list {
+    width: 100%;
+    /* Table container min-height */
+    border-collapse: collapse;
+    font-size: 13px;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Table header */
+#Table-expense-list thead th {
+    position: sticky !important;
+    top: 0;
+    z-index: 10;
+    background-color: rgb(0, 0, 129);
+    /* header bg */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    padding: 2px 8px;
+    line-height: 1.3;
+    font-size: 11px;
+    /* consistent padding */
+    white-space: nowrap;
+}
+
+/* Table body cells */
+#Table-expense-list tbody td {
+    padding: 3px 8px;
+    /* consistent padding */
+    border-bottom: 1px solid #ccc;
+    vertical-align: middle;
+    /* center content vertically */
+    white-space: nowrap;
+}
+
+/* Table rows */
+#Table-expense-list tbody tr {
+    height: auto;
+    /* allow growth for bigger content */
+}
+
+/* Right-align numeric columns */
+#Table-expense-list tbody td.numeric {
+    text-align: right;
+}
+
+/* Hover effect */
+#Table-expense-list tbody tr:hover {
+    background-color: #f9f9f9;
+}
+
+/* Optional: alternate row colors */
+#Table-expense-list tbody tr:nth-child(even) {
+    background-color: #fefefe;
+}
+
+/* Scrollable container (if needed) */
+#Table-sale-list-container {
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* Optional: fix table width for horizontal scroll */
+#Table-expense-list {
+    table-layout: auto;
+    /* auto or fixed depending on your preference */
+}
+
+#Table-expense-list th:nth-child(3) {
+    position: sticky !important;
+    left: 0;
+    background-color: rgb(0, 0, 129);
+    /* must have background */
+    color: white;
+    font-weight: bold;
+    text-align: left;
+    color: white;
+    z-index: 999 !important;
+}
+
+#Table-expense-list td:nth-child(3) {
+    position: sticky !important;
+    left: 0;
+    background-color: rgb(255, 255, 255);
+    /* must have background */
+    z-index: 9 !important;
+
+}
+
+/* ------------------------------------------------------------------------------ */
+
+
+
+.hight_index {
+    z-index: 10000;
+}
+
+.min_heigh_70 {
+    min-width: 70%;
+}
+
+#shop_info {
+    display: flex;
+    flex-direction: column;
+}
+
+.img {
+    width: 100px;
+    height: 100px;
+
+    overflow: hidden;
+}
+
+.img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.img_400 {
+    width: 200px;
+    height: 200px;
+
+    overflow: hidden;
+}
+
+.img_400 img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+#DatePromptModal button {
+    padding: 3px;
+    border-radius: 5px;
+    font-size: 12px;
+}
+
+#chasier {
+    font-size: 26px;
+}
+
+#refresh-icon {
+    font-size: 25px;
+}
+
+.no-stock-float {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    font-size: 16px;
+    font-weight: bold;
+    color: #ef4444;
+    pointer-events: none;
+    animation: floatUp 1s ease-out forwards;
+    z-index: 9999;
+}
+
+/* PRODUCT CARD PREMIUM CLEAN */
+.card_style {
+    min-height: 140px !important;
+    max-height: 205px !important;
+
+    border-radius: 18px !important;
+    overflow: hidden;
+    background: #ffffff !important;
+    border: 1px solid #e5e7eb !important;
+    box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08) !important;
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+}
+
+.card_style:hover {
+    transform: translateY(-3px);
+    border-color: #c4b5fd !important;
+    box-shadow: 0 12px 28px rgba(88, 28, 135, 0.16) !important;
+    background: #ffffff !important;
+}
+
+.card_style button {
+    height: 100%;
+    background: transparent;
+}
+
+/* IMAGE */
+.card_style img {
+    width: 100%;
+    height: 90px !important;
+    min-height: 90px !important;
+    max-height: 90px !important;
+    object-fit: cover;
+    background: #f5f3ff;
+    transition: transform .25s ease;
+}
+
+.card_style:hover img {
+    transform: scale(1.04);
+}
+
+/* INFO ICON */
+.info {
+    top: 8px !important;
+    right: 8px !important;
+    font-size: 15px !important;
+    background: rgba(255, 255, 255, .9);
+    padding: 5px;
+    border-radius: 999px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .12);
+}
+
+/* PRODUCT NAME */
+.product-name-card {
+    text-align: left !important;
+    font-size: 12.5px;
+    font-weight: 700;
+    line-height: 1.35;
+    color: #1e293b;
+    min-height: 36px;
+
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+/* STOCK + PRICE TEXT */
+.product-text-card {
+    font-size: 11.5px !important;
+    font-weight: 600;
+}
+
+/* PRICE */
+.pricing {
+    font-size: 14px !important;
+    font-weight: 800 !important;
+    color: #4c1d95;
+    white-space: nowrap;
+}
+
+/* OLD PRICE */
+del.pricing {
+    font-size: 11px !important;
+    color: #94a3b8 !important;
+    font-weight: 500 !important;
+}
+
+/* TEXT AREA */
+.card_style .flex.flex-col.justify-between.p-2 {
+    height: 90px !important;
+    margin-top: 0 !important;
+    padding: 10px !important;
+}
+
+/* CENTER AREA LESS UGLY */
+.card_style p {
+    margin: 0;
+    text-align: left;
+    line-height: 1.5;
+}
+
+.card_style .text-center {
+    text-align: left !important;
+}
+
+/* DISCOUNT BADGE */
+.card_style span.bg-red-500 {
+    border-radius: 999px !important;
+    font-size: 10px !important;
+    padding: 3px 7px !important;
+    font-weight: 800;
+}
+
+.info-wrap {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    z-index: 5;
+    /* lower it too — only needs to beat the image/badge */
+}
+
+.info-wrap .info {
+    position: static !important;
+    display: inline-flex;
+    cursor: help;
+    background: rgba(255, 255, 255, .95);
+    border-radius: 999px;
+    padding: 5px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, .15);
+    transition: transform .15s ease;
+}
+
+.info-wrap:hover .info {
+    transform: scale(1.15);
+}
+
+/* ── Popup: fixed = escapes every card, always on top ── */
+.info-popup {
+    position: fixed;
+    /* key change */
+    width: 250px;
+    background: linear-gradient(160deg, #1e293b, #0f172a);
+    color: #e2e8f0;
+    border: 1px solid rgba(148, 163, 184, .25);
+    border-radius: 14px;
+    font-size: 12px;
+    line-height: 1.5;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(8px) scale(.97);
+    transition: opacity .18s ease, transform .18s ease, visibility .18s;
+    z-index: 2147483647;
+    /* max, and it actually works now */
+    pointer-events: none;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .35);
+    overflow: hidden;
+}
+
+.info-popup.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0) scale(1);
+}
+
+.info-popup .ip-header {
+    background: rgba(59, 130, 246, .15);
+    border-bottom: 1px solid rgba(148, 163, 184, .2);
+    padding: 10px 12px;
+    font-weight: 700;
+    color: #fff;
+    font-size: 13px;
+}
+
+.info-popup .ip-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 7px 12px;
+    border-bottom: 1px dashed rgba(148, 163, 184, .15);
+}
+
+.info-popup .ip-row:last-child {
+    border-bottom: none;
+}
+
+.info-popup .ip-label {
+    color: #94a3b8;
+    white-space: nowrap;
+}
+
+.info-popup .ip-value {
+    text-align: right;
+    font-weight: 600;
+    color: #f1f5f9;
+    word-break: break-word;
+}
+
+.info-popup .ip-desc {
+    padding: 8px 12px 10px;
+    color: #cbd5e1;
+    font-style: italic;
+    background: rgba(0, 0, 0, .2);
+}
+
+.card_style:hover::before {
+    opacity: 1;
+}
+
+.card_style:nth-child(1) {
+    animation-delay: 0.05s;
+}
+
+.card_style:nth-child(2) {
+    animation-delay: 0.1s;
+}
+
+.card_style:nth-child(3) {
+    animation-delay: 0.15s;
+}
+
+.card_style:nth-child(4) {
+    animation-delay: 0.2s;
+}
+
+.card_style:nth-child(5) {
+    animation-delay: 0.25s;
+}
+
+.card_style:nth-child(6) {
+    animation-delay: 0.3s;
+}
+
+.card_style:nth-child(7) {
+    animation-delay: 0.35s;
+}
+
+.card_style:nth-child(8) {
+    animation-delay: 0.4s;
+}
+
+.card_style:nth-child(9) {
+    animation-delay: 0.45s;
+}
+
+.card_style:nth-child(10) {
+    animation-delay: 0.5s;
+}
+
+.card_style:nth-child(11) {
+    animation-delay: 0.55s;
+}
+
+.card_style:nth-child(12) {
+    animation-delay: 0.6s;
+}
+
+.card_style:nth-child(13) {
+    animation-delay: 0.65s;
+}
+
+.card_style:nth-child(14) {
+    animation-delay: 0.7s;
+}
+
+.card_style:nth-child(15) {
+    animation-delay: 0.75s;
+}
+
+.card_style:nth-child(16) {
+    animation-delay: 0.8s;
+}
+
+.card_style:nth-child(17) {
+    animation-delay: 0.85s;
+}
+
+.card_style:nth-child(18) {
+    animation-delay: 0.9s;
+}
+
+.card_style:nth-child(19) {
+    animation-delay: 0.95s;
+}
+
+.card_style:nth-child(20) {
+    animation-delay: 1s;
+}
+
+.card_style:nth-child(21) {
+    animation-delay: 1.05s;
+}
+
+.card_style:nth-child(22) {
+    animation-delay: 1.1s;
+}
+
+.card_style:nth-child(23) {
+    animation-delay: 1.15s;
+}
+
+.card_style:nth-child(24) {
+    animation-delay: 1.2s;
+}
+
+.card_style:nth-child(25) {
+    animation-delay: 1.25s;
+}
+
+.card_style:nth-child(26) {
+    animation-delay: 1.3s;
+}
+
+.card_style:nth-child(27) {
+    animation-delay: 1.35s;
+}
+
+.card_style:nth-child(28) {
+    animation-delay: 1.4s;
+}
+
+.card_style:nth-child(29) {
+    animation-delay: 1.45s;
+}
+
+.card_style:nth-child(30) {
+    animation-delay: 1.5s;
+}
+
+
+
+/* Fade + slide down animation */
+@keyframes fadeSlideDown {
+    0% {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-add {
+    animation: fadeSlideDown 0.3s ease forwards;
+}
+
+/* Number count animation (optional) */
+.number-change {
+    transition: all 0.3s ease;
+}
+
+#total {
+    transition: all 0.3s ease;
+}
+
+.ss-f {
+    height: 30px;
+    width: 100%;
+    border-radius: 4px;
+    background: #ffffff;
+    border: 1px solid #bae6fd;
+    color: #0f172a;
+    font-size: 13px;
+    padding: 0 10px 0 12px;
+    outline: none;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+    transition: .15s ease;
+}
+
+.ss-f::placeholder {
+    color: #94a3b8;
+}
+
+.ss-f:focus {
+    border-color: #38bdf8;
+    background: #f8fdff;
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, .20);
+}
+
+.ss-f option {
+    background: #ffffff;
+    color: #0f172a;
+}
+
+.ss-f[type=date] {
+    color-scheme: light;
+}
+
+.ss-f[type=date]::-webkit-calendar-picker-indicator {
+    filter: none;
+    opacity: .65;
+    cursor: pointer;
+}
+
+#default-modal-purchase-list span,
+#default-modal-purchase-list i {
+    color: #64748b;
+}
+
+#default-modal-purchase-list .fa-cart-flatbed {
+    color: #0284c7;
+}
+
+#purchaseTableBody tr {
+    background: #ffffff;
+    border-bottom: 1px solid #e0f2fe;
+}
+
+#purchaseTableBody tr:hover {
+    background: #f0f9ff;
+}
+
+#purchaseTableBody td {
+    color: #334155;
+}
+
+/* ===== Category tabs: premium 3D pills ===== */
+/* ===== Category tabs: subtle minimal ===== */
+
+.tab-track {
+    background: rgba(255, 255, 255, 0.25);
+    /* faint frosted strip on the amber */
+    border-radius: 10px;
+    box-shadow: none;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, .2) transparent;
+    scroll-behavior: smooth;
+}
+
+.tab-track::-webkit-scrollbar {
+    height: 3px;
+}
+
+.tab-track::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.tab-track::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, .15);
+    border-radius: 9999px;
+}
+
+.tab-track:hover::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, .3);
+}
+
+.tab-pill {
+    white-space: nowrap;
+    padding: 0.45rem 1rem;
+    border-radius: 7px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #4b5563;
+    background: transparent;
+    /* no box until you interact */
+    border: 1px solid transparent;
+    box-shadow: none;
+    transition: background 0.15s ease, color 0.15s ease;
+    cursor: pointer;
+}
+
+.tab-pill:hover {
+    background: rgba(255, 255, 255, 0.55);
+    color: #111827;
+    transform: none;
+    /* no lifting/jumping */
+}
+
+.tab-pill.tab-active {
+    color: #111827;
+    background: #ffffff;
+    /* clean white chip, no gradient */
+    border-color: rgba(0, 0, 0, 0.06);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    /* whisper of depth */
+    transform: none;
+}
+
+.product-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 0.6rem;
+}
+
+/* ===== Cart header controls ===== */
+.hd-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-radius: 999px;
+    flex-shrink: 0;
+}
+
+.hd-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 30px;
+    min-width: 30px;
+    padding: 0 8px;
+    border: none;
+    border-radius: 999px;
+    background: transparent;
+    color: #6b7280;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background .15s ease, color .15s ease;
+}
+
+.hd-item:hover {
+    background: #fff;
+    color: #111827;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .08);
+}
+
+.hd-item.dark-on {
+    color: #d97706;
+}
+
+/* theme button state */
+
+.hd-sep {
+    width: 1px;
+    height: 16px;
+    background: #e5e7eb;
+}
+
+/* mini switch */
+.cd-switch {
+    position: relative;
+    display: inline-flex;
+}
+
+.cd-switch input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    padding: 0 !important;
+}
+
+.cd-track {
+    position: relative;
+    display: inline-block;
+    width: 32px;
+    height: 16px;
+    border-radius: 999px;
+    background: #d1d5db;
+    transition: background .2s ease;
+}
+
+.cd-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .25);
+    transition: left .2s ease;
+}
+
+.cd-switch input:checked+.cd-track {
+    background: #22c55e;
+}
+
+.cd-switch input:checked+.cd-track .cd-knob {
+    left: 18px;
+}
+
+@keyframes cardStyleIn {
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes floatUp {
+    0% {
+        opacity: 0;
+        transform: translate(-50%, 0) scale(0.8);
+    }
+
+    20% {
+        opacity: 1;
+    }
+
+    100% {
+        opacity: 0;
+        transform: translate(-50%, -60px) scale(1.2);
+    }
+}
+
+/* Fade in animation */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.animate-fadeIn {
+    animation: fadeIn 0.25s ease-out forwards;
+}
+
+@keyframes fadeInOut {
+    0% {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+
+    50% {
+        opacity: 1;
+        transform: scale(1.1);
+    }
+
+    100% {
+        opacity: 0;
+        transform: scale(1);
+    }
+}
+
+.rotate-180 {
+    transform: rotate(180deg);
+}
+
+#welcomeScreen h1 {
+    animation: fadeInOut 5s ease-in-out forwards;
+}
+
+
+.filter-input {
+    height: 44px;
+    width: 100%;
+    border-radius: 0.75rem;
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    background: rgba(255, 255, 255, 0.96);
+    padding: 0 0.85rem;
+    font-size: 0.875rem;
+    color: #0f172a;
+    outline: none;
+}
+
+.filter-input:focus {
+    border-color: #22d3ee;
+    box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.25);
+}
+
+#expense_table_body tr:hover {
+    background: #f8fafc;
+}
+
+.expense-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.badge-paid {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.badge-unpaid {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.badge-pending {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.badge-cancelled {
+    background: #e5e7eb;
+    color: #374151;
+}
+
+#mobileCartToggle {
+    display: none;
+}
+
+@keyframes scaleUp {
+    0% {
+        transform: scale(0.8);
+        opacity: 0;
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.animate-scaleUp {
+    animation: scaleUp 0.25s ease-out forwards;
+}
+
+@keyframes pop {
+    0% {
+        transform: translate(0, 0) scale(0.3);
+        opacity: 0;
+    }
+
+    40% {
+        opacity: 1;
+    }
+
+    100% {
+        transform: translate(var(--x), var(--y)) scale(1.2);
+        opacity: 0;
+    }
+}
+
+/* Hide elements you don’t want in print */
+
+@media print {
+    .screen-only {
+        display: none !important;
+    }
+
+    .print-only {
+        display: block !important;
+    }
+
+    .shop-info {
+        display: block;
+        text-align: right;
+    }
+
+    .shop-info div {
+        line-height: 1.4;
+    }
+
+    .space {
+        margin-bottom: 15px;
+    }
+}
+
+@media screen {
+    .print-only {
+        display: none;
+    }
+
+    .space {
+        margin-bottom: 15px;
+    }
+}
+
+@media (max-width: 430px) {
+    body {
+        font-size: 12px;
+    }
+
+    h1 {
+        font-size: 18px;
+    }
+
+    h2 {
+        font-size: 15px;
+    }
+
+    /* ---------- Layout: stack products / cart ---------- */
+    #container {
+        flex-direction: column;
+        height: auto;
+        overflow: auto;
+    }
+
+    #mainContent {
+        width: 100%;
+        min-height: 52vh;
+    }
+
+    #tab-content {
+        height: 52vh !important;
+    }
+
+    #resizer {
+        display: none;
+    }
+
+    #sidebar {
+        flex: 0 0 auto !important;
+        width: 100% !important;
+        max-width: 100%;
+        min-width: 0;
+        position: sticky;
+        bottom: 0;
+        z-index: 30;
+        border-top: 2px solid #e5e7eb;
+    }
+
+    #inner-sidebar {
+        height: 44vh !important;
+    }
+
+    /* ---------- Top bar ---------- */
+    #category_show {
+        flex-direction: column;
+        align-items: stretch;
+        margin: 0 0.35rem;
+    }
+
+    #category_show>div:first-child {
+        padding: 4px;
+    }
+
+    /* search group fills the width */
+    #category_show .flex.items-stretch.h-10 {
+        height: 38px;
+        width: 100%;
+    }
+
+    #field-select {
+        padding-left: 6px;
+        padding-right: 18px;
+        font-size: 11px;
+        max-width: 90px;
+    }
+
+    #search-dropdown {
+        width: 100% !important;
+        min-width: 0;
+        font-size: 12px;
+    }
+
+    #category-tabs {
+        width: 100%;
+        padding: 2px 4px;
+    }
+
+    .tab-pill {
+        padding: 0.4rem 0.6rem;
+        /* keep height for fingers */
+        font-size: 0.68rem;
+    }
+
+    /* ---------- Product grid: 2 columns ---------- */
+    #tab-content .min_heigh_70,
+    #tab-content .product-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 0.4rem;
+        padding: 0.4rem;
+    }
+
+    .card_style {
+        min-height: 150px !important;
+        max-height: 230px !important;
+        border-radius: 12px !important;
+    }
+
+    .card_style img {
+        max-height: 90px !important;
+        min-height: 90px !important;
+    }
+
+    .card_style .add-to-cart-btn>div:last-child {
+        height: 95px !important;
+        padding: 5px;
+        margin-top: 2px;
+    }
+
+    .product-name-card {
+        font-size: 11px;
+        min-height: 28px;
+        -webkit-line-clamp: 2;
+    }
+
+    .product-text-card {
+        font-size: 10px !important;
+    }
+
+    .pricing {
+        font-size: 12px !important;
+    }
+
+    del.pricing {
+        font-size: 9.5px !important;
+    }
+
+    .info {
+        font-size: 14px !important;
+        padding: 5px;
+    }
+
+    /* ---------- Bottom drawer ---------- */
+    #drawer {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.4rem;
+        padding: 0.4rem;
+        max-height: 60vh;
+        overflow-y: auto;
+    }
+
+    #drawer-body {
+        min-height: 48px;
+        display: flex;
+        align-items: center;
+        padding: 6px 12px;
+    }
+
+    #drawer-swipe {
+        bottom: 48px;
+        /* peek = header height; Flowbite resets to 0 when open */
+    }
+
+    #drawer .p-4 {
+        padding: 0.5rem;
+    }
+
+    #drawer i {
+        font-size: 13px;
+    }
+
+    #drawer .font-medium {
+        font-size: 9.5px;
+    }
+
+    #drawer .w-12.h-12 {
+        width: 2rem;
+        height: 2rem;
+    }
+
+    /* ---------- Modals: full screen ---------- */
+    #default-modal-customer-list>div,
+    #default-modal-product-list .flex>div,
+    #default-modal-sale-list>div,
+    #default-modal-warehouse>div,
+    #default-modal-expense-list>div,
+    #default-modal-ledger-entry-list>div,
+    #default-modal-sales-order-list>div,
+    #default-modal-sales-order-save>div {
+        max-width: 100vw !important;
+        width: 100vw !important;
+        padding: 0 !important;
+        margin: 0 !important;
+    }
+
+    #default-modal-sale-list,
+    #default-modal-expense-list,
+    #default-modal-warehouse,
+    #default-modal-ledger-entry-list {
+        padding: 0 !important;
+    }
+
+    /* filter grids collapse to 2 cols */
+    #default-modal-sale-list .grid,
+    #default-modal-expense-list .grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 0.4rem;
+    }
+
+    /* hide misaligned filter icons (same fix as laptop) */
+    #default-modal-sale-list .fa-user.absolute,
+    #default-modal-sale-list .fa-box.absolute {
+        display: none;
+    }
+
+    #customer_search,
+    #product_search,
+    #document_search_invoice {
+        padding-left: 12px !important;
+    }
+
+    /* report tables */
+    #Table-sale-list,
+    #Table-sale-order,
+    #Table-item-ledger-entry,
+    #Table-Purchase-list,
+    #Table-expense-list,
+    #product_table,
+    #wh-product,
+    #user-table,
+    #customer-list,
+    #vendor-list {
+        font-size: 10.5px;
+    }
+
+    #Table-sale-list thead th,
+    #Table-sale-order thead th,
+    #Table-item-ledger-entry thead th,
+    #product_table thead th,
+    #wh-product thead th {
+        padding: 2px 6px !important;
+        line-height: 1.3;
+    }
+
+    #Table-sale-list tbody td,
+    #Table-sale-order tbody td,
+    #Table-item-ledger-entry tbody td,
+    #product_table tbody td,
+    #wh-product tbody td {
+        padding: 2px 6px !important;
+    }
+
+    /* ---------- Layout: full-screen products, cart as overlay ---------- */
+    #container {
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+    }
+
+    #mainContent {
+        width: 100%;
+        flex: 1 1 auto;
+    }
+
+    #tab-content {
+        height: calc(100vh - 110px) !important;
+        /* minus top bar + drawer peek */
+        padding-bottom: 80px;
+        /* room behind floating button */
+    }
+
+    #resizer {
+        display: none;
+    }
+
+    /* cart hidden below screen, slides up when open */
+    #sidebar {
+        position: fixed !important;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100% !important;
+        max-width: 100%;
+        min-width: 0;
+        height: 88vh;
+        z-index: 45;
+        /* above drawer(40), below modals(50) */
+        transform: translateY(100%);
+        transition: transform 0.28s ease;
+        border-top-left-radius: 18px;
+        border-top-right-radius: 18px;
+        box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.25);
+        overflow: hidden;
+    }
+
+    #sidebar.mobile-open {
+        transform: translateY(0);
+    }
+
+    #inner-sidebar {
+        height: 88vh !important;
+    }
+
+    /* ---------- Floating cart button ---------- */
+    #mobileCartToggle {
+        display: flex;
+        position: fixed;
+        right: 14px;
+        bottom: 64px;
+        /* clear of drawer peek */
+        z-index: 46;
+        /* above the cart panel */
+        width: 56px;
+        height: 56px;
+        border-radius: 999px;
+        border: none;
+        background: #2563eb;
+        color: #fff;
+        font-size: 22px;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45);
+        cursor: pointer;
+    }
+
+    #mobileCartToggle.cart-open {
+        background: #ef4444;
+        box-shadow: 0 6px 20px rgba(239, 68, 68, 0.45);
+    }
+
+    #mobileCartBadge {
+        display: none;
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        min-width: 22px;
+        height: 22px;
+        padding: 0 5px;
+        border-radius: 999px;
+        background: #f59e0b;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 800;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid #fff;
+    }
+
+    @keyframes cartPulse {
+        0% {
+            transform: scale(1);
+        }
+
+        40% {
+            transform: scale(1.18);
+        }
+
+        100% {
+            transform: scale(1);
+        }
+    }
+
+    #mobileCartToggle.pulse {
+        animation: cartPulse 0.35s ease;
+    }
+}
+
+/* ==========================================================
+   TABLET RESPONSIVE — 431px – 1023px
+   Targets: iPad portrait (768px), small tablets, big phones,
+   and small laptops (e.g. 1000px) — runs right up to Tailwind's
+   `lg` breakpoint (1024px) so there's no gap before the desktop
+   side-by-side grid layout takes over.
+   Keeps products + cart side-by-side (POS style) but shrinks
+   the cart so the product grid stays usable.
+   ========================================================== */
+/* ==========================================
+                   TABLET 431–1023px : compact cart
+                   ========================================== */
+@media (min-width: 431px) and (max-width: 1023px) {
+    #resizer {
+        display: none;
+    }
+
+    /* cart hidden below screen, slides up when open */
+    #sidebar {
+        position: fixed !important;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        flex: 0 0 auto !important;
+        width: 100% !important;
+        max-width: 100%;
+        min-width: 0;
+        height: 88vh;
+        z-index: 45;
+        transform: translateY(100%);
+        transition: transform 0.28s ease;
+        border-top-left-radius: 18px;
+        border-top-right-radius: 18px;
+        box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.25);
+        overflow: hidden;
+        background: #fff;
+    }
+
+    #sidebar.mobile-open {
+        transform: translateY(0);
+    }
+
+    #inner-sidebar {
+        height: 88vh !important;
+    }
+
+    /* products get the full width */
+    #mainContent {
+        width: 100%;
+        flex: 1 1 auto;
+    }
+
+    /* floating cart button */
+    #mobileCartToggle {
+        display: flex;
+        position: fixed;
+        right: 16px;
+        bottom: 70px;
+        z-index: 46;
+        width: 58px;
+        height: 58px;
+        border-radius: 999px;
+        border: none;
+        background: #2563eb;
+        color: #fff;
+        font-size: 23px;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45);
+        cursor: pointer;
+    }
+
+    #mobileCartToggle.cart-open {
+        background: #ef4444;
+        box-shadow: 0 6px 20px rgba(239, 68, 68, 0.45);
+    }
+
+    #mobileCartBadge {
+        display: none;
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        min-width: 22px;
+        height: 22px;
+        padding: 0 5px;
+        border-radius: 999px;
+        background: #f59e0b;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 800;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid #fff;
+    }
+
+    @keyframes cartPulse {
+        0% {
+            transform: scale(1);
+        }
+
+        40% {
+            transform: scale(1.18);
+        }
+
+        100% {
+            transform: scale(1);
+        }
+    }
+
+    #mobileCartToggle.pulse {
+        animation: cartPulse 0.35s ease;
+    }
+
+    .ci-header {
+        padding: 9px 11px;
+        gap: 8px;
+    }
+
+    .ci-name {
+        font-size: 12.5px;
+    }
+
+    .ci-order-no {
+        font-size: 11px;
+    }
+
+    .ci-qty {
+        font-size: 11px;
+    }
+
+    .ci-price-line {
+        font-size: 11px;
+    }
+
+    .ci-total-amount {
+        font-size: 13.5px;
+    }
+
+    .ci-total-currency {
+        font-size: 11px;
+    }
+
+    .ci-panel-inner {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        padding: 10px;
+        gap: 8px;
+    }
+
+    .ci-input {
+        padding: 8px;
+        /* keep touch-friendly */
+        font-size: 13px;
+    }
+
+    .ci-lot-btn {
+        min-width: 40px;
+        /* finger target */
+        padding: 9px 12px;
+    }
+}
+
+/* ==========================================
+                   MOBILE ≤430px : cart usable with thumbs
+                   ========================================== */
+@media (max-width: 430px) {
+
+    .ci-header {
+        padding: 8px 10px;
+        gap: 8px;
+    }
+
+    .ci-name {
+        font-size: 12.5px;
+    }
+
+    .ci-order-no {
+        font-size: 11px;
+    }
+
+    .ci-price-line {
+        font-size: 11px;
+    }
+
+    .ci-total-amount {
+        font-size: 13.5px;
+    }
+
+    .ci-total-currency {
+        font-size: 11px;
+    }
+
+    .ci-panel.ci-open {
+        max-height: 560px;
+    }
+
+    /* editor stacks: 1 field per row, big inputs */
+    .ci-panel-inner {
+        grid-template-columns: 1fr;
+        padding: 10px;
+        gap: 8px;
+    }
+
+    .ci-input {
+        padding: 10px;
+        font-size: 16px;
+        /* 16px stops iOS auto-zoom on focus */
+    }
+
+    .ci-lot-btn {
+        min-width: 44px;
+        padding: 10px 14px;
+        font-size: 14px;
+    }
+
+    .ci-empty {
+        padding: 24px 12px;
+        font-size: 13px;
+    }
+
+    .ci-empty+* img,
+    .ci-empty img {
+        width: 90px;
+        height: 90px;
+    }
+
+    /* totals area */
+    #total {
+        padding: 8px;
+        gap: 6px;
+    }
+
+    #total p {
+        font-size: 12px;
+    }
+
+    #total p.font-semibold {
+        font-size: 13.5px;
+    }
+
+    /* currency + customer stacked */
+    #total .w-full.flex.items-end.justify-between.gap-2 {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+    }
+
+    #total .relative.w-full.min-w-\[180px\] {
+        min-width: 0;
+    }
+
+    #total #list_main {
+        width: 100% !important;
+        min-width: 0;
+    }
+
+    #total select,
+    #total #customerSearch {
+        height: 40px;
+        /* touch target */
+        font-size: 16px;
+        /* no iOS zoom */
+        width: 100%;
+    }
+
+    #total .fa-dollar-sign,
+    #total #list_main .fa-user-tie {
+        display: none;
+    }
+
+    #total select {
+        padding-left: 10px !important;
+    }
+
+    #total #list_main input#customerSearch {
+        padding-left: 10px !important;
+    }
+
+    /* action buttons: 2 per row, tall enough to tap */
+    #total .mt-5.grid.grid-cols-4 {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+    }
+
+    #total .mt-5 button {
+        padding: 10px 8px !important;
+        font-size: 13px;
+    }
+
+    /* header controls */
+    #header_invoice h2 {
+        font-size: 17px;
+    }
+
+    .hd-item {
+        height: 32px;
+        min-width: 32px;
+    }
+}
+
+/* ==========================================================
+   SMALL TABLETS / LARGE PHONES: 431px – 640px
+   Stack the cart under the products — side-by-side is too tight
+   ========================================================== */
+@media (min-width: 431px) and (max-width: 640px) {
+
+    #container {
+        flex-direction: column;
+        height: auto;
+        overflow: auto;
+    }
+
+    #mainContent {
+        width: 100%;
+        min-height: 55vh;
+    }
+
+    #tab-content {
+        height: 55vh !important;
+    }
+
+
+    #inner-sidebar {
+        height: 42vh !important;
+    }
+}
+
+
+/* ==========================================================
+   LAPTOP RESPONSIVE — replace your old
+   @media (min-width: 1000px) and (max-width: 1400px) { ... }
+   block with everything below.
+   Targets: 1366×768, 1280×800, 1440×900 laptops
+   ========================================================== */
+
+@media (min-width: 1000px) and (max-width: 1400px) {
+
+    /* ---------- 1. Typography (12px minimum — 10px was too small) ---------- */
+    body {
+        font-size: 13px;
+    }
+
+    h1 {
+        font-size: 22px;
+    }
+
+    h2 {
+        font-size: 18px;
+    }
+
+    h3 {
+        font-size: 16px;
+    }
+
+    h5 {
+        font-size: 12px;
+    }
+
+    p,
+    span,
+    label {
+        font-size: 12px;
+    }
+
+    #tittle_span {
+        font-size: 18px;
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+        font-size: 12px;
+        /* top/bottom only — a blanket left/right override here crushes any
+           input that needs extra horizontal room for a prefix icon ($ sign,
+           search icon, etc.), since this unlayered rule beats Tailwind's
+           layered pl-*/pr-* utilities regardless of their specificity. */
+        padding-top: 4px;
+        padding-bottom: 4px;
+    }
+
+    /* ---------- 2. Layout: narrower cart → more room for products ---------- */
+    #sidebar {
+        flex: 0 0 auto;
+        /* basis defers to width (Tailwind class / resize JS) */
+        width: 320px;
+        min-width: 250px;
+    }
+
+    /* 768px-tall screens overflow at 90vh, use 88vh + smaller sticky areas */
+    #inner-sidebar,
+    #tab-content {
+        height: 88vh !important;
+    }
+
+    /* no forced height here — each modal's own flex-1 body wrapper
+       already sizes this correctly for the real header/footer it has */
+
+    /* ---------- 3. Top bar: compact search + category tabs ---------- */
+    #category_show>div:first-child {
+        padding: 6px 8px;
+        /* was px-4 py-3 */
+    }
+
+    #search-dropdown {
+        width: 11rem;
+        /* was w-56 / w-64 */
+    }
+
+    #field-select {
+        padding-left: 8px;
+        padding-right: 22px;
+    }
+
+    #category-tabs {
+        padding: 2px 6px;
+    }
+
+    .tab-pill {
+        padding: 0.3rem 0.7rem;
+        font-size: 0.72rem;
+    }
+
+    /* ---------- 4. Product grid: auto-fit cards, smaller images ---------- */
+    /* Overrides Tailwind lg:grid-cols-6 → cards never get squeezed */
+    /* ---------- 4. Product grid: auto-fit cards, smaller images ---------- */
+
+    .card_style {
+        min-height: 130px !important;
+        max-height: 195px !important;
+        padding: 8px;
+        border-radius: 14px;
+        opacity: 0;
+        animation: cardStyleIn .4s ease forwards;
+    }
+
+    .card_style img {
+        max-height: 85px !important;
+        min-height: 85px !important;
+        border-radius: 10px;
+    }
+
+    .card_style .add-to-cart-btn>div:last-child {
+        height: 80px !important;
+        padding: 5px;
+        margin-top: 4px;
+    }
+
+    .card_style h5 {
+        font-size: 11px;
+        line-height: 1.3;
+    }
+
+    .product-text-card {
+        font-size: 11px;
+    }
+
+    .product-name-card {
+        font-size: 12px;
+        min-height: 32px;
+    }
+
+    .pricing {
+        font-size: 13px !important;
+    }
+
+    /* ---------- 5. Cart / invoice side ---------- */
+    #sidebar input {
+        padding: 2px 6px !important;
+    }
+
+    #add-to-cart-btn {
+        padding: 0;
+    }
+
+    .btn_sale_invoice {
+        padding: 2px !important;
+    }
+
+    .btn_sale_invoice button {
+        padding: 2px 4px !important;
+    }
+
+    .bonus {
+        padding: 2px !important;
+    }
+
+    #chasier {
+        font-size: 20px;
+    }
+
+    #refresh-icon {
+        font-size: 16px;
+    }
+
+    .hd-item {
+        height: 26px;
+        min-width: 26px;
+        font-size: 11px;
+    }
+
+    /* ---------- 6. Report tables & modals ---------- */
+    .respond_laptop {
+        padding: 5px;
+    }
+
+    #Table-sale-list,
+    #Table-sale-order,
+    #Table-item-ledger-entry,
+    #Table-Purchase-list,
+    #Table-expense-list,
+    #product_table,
+    #wh-product,
+    #user-table,
+    #customer-list {
+        font-size: 12px;
+    }
+
+    #Table-sale-list thead th,
+    #Table-sale-order thead th,
+    #Table-item-ledger-entry thead th,
+    #product_table thead th,
+    #wh-product thead th {
+        padding: 2px 6px !important;
+        line-height: 1.3;
+    }
+
+    #Table-sale-list tbody td,
+    #Table-sale-order tbody td,
+    #Table-item-ledger-entry tbody td,
+    #product_table tbody td,
+    #wh-product tbody td {
+        padding: 2px 6px !important;
+    }
+
+    #drawer i {
+        font-size: 15px;
+        padding: 0;
+    }
+
+    #drawer-body {
+        padding: 8px;
+    }
+
+    /* ---------- Cart items: compact ---------- */
+    .ci-header {
+        padding: 7px 10px;
+        gap: 8px;
+    }
+
+    .ci-name {
+        font-size: 12px;
+    }
+
+    .ci-order-no {
+        font-size: 10.5px;
+    }
+
+    .ci-qty {
+        font-size: 11px;
+    }
+
+    .ci-price-line {
+        font-size: 11px;
+        margin-top: 3px;
+    }
+
+    .ci-badge {
+        font-size: 9.5px;
+        padding: 1px 6px;
+        margin-top: 3px;
+    }
+
+    .ci-total-amount {
+        font-size: 13px;
+    }
+
+    .ci-total-currency {
+        font-size: 10.5px;
+    }
+
+    .ci-total del {
+        font-size: 10px;
+    }
+
+    .ci-chevron {
+        font-size: 13px;
+    }
+
+    .ci-remove {
+        font-size: 13px;
+    }
+
+    .ci-controls {
+        gap: 5px;
+    }
+
+    /* editor panel */
+    .ci-panel-inner {
+        padding: 8px 10px 10px;
+        gap: 7px;
+    }
+
+    .ci-label {
+        font-size: 10.5px;
+        margin-bottom: 2px;
+    }
+
+    .ci-input {
+        padding: 5px 7px;
+        font-size: 12px;
+        border-radius: 6px;
+    }
+
+    .ci-lot-row {
+        padding: 5px 8px;
+    }
+
+    .ci-lot-label {
+        font-size: 11px;
+    }
+
+    .ci-lot-btn {
+        min-width: 28px;
+        padding: 4px 8px;
+        font-size: 11.5px;
+    }
+
+    /* totals + action buttons */
+    #total {
+        padding: 6px;
+        gap: 4px;
+    }
+
+    #total p {
+        font-size: 11.5px;
+    }
+
+    #total p.font-semibold {
+        font-size: 12.5px;
+    }
+
+    #total select,
+    #total #customerSearch {
+        padding-top: 5px !important;
+        padding-bottom: 5px !important;
+        height: 34px;
+        font-size: 12px;
+    }
+
+    #total .mt-5 {
+        margin-top: 8px;
+    }
+
+    #total .mt-5 button {
+        padding: 5px 6px !important;
+        font-size: 11.5px;
+        border-radius: 8px;
+    }
+
+    /* empty cart state */
+    .ci-empty {
+        padding: 30px 14px;
+        font-size: 13px;
+    }
+
+    /* ---------- Top bar ---------- */
+    #category_show {
+        margin-left: 0.5rem;
+        margin-right: 0.5rem;
+    }
+
+    #category_show>div:first-child {
+        padding: 4px 6px;
+    }
+
+    /* search group: shorter + narrower */
+    #category_show .flex.items-stretch.h-10 {
+        height: 34px;
+    }
+
+    #field-select {
+        padding-left: 8px;
+        padding-right: 22px;
+        font-size: 12px;
+    }
+
+    #search-dropdown {
+        width: 10rem;
+        font-size: 12px;
+    }
+
+    /* category tabs */
+    #category-tabs {
+        padding: 2px 6px;
+    }
+
+    .tab-pill {
+        padding: 0.3rem 0.7rem;
+        font-size: 0.72rem;
+    }
+
+    /* ---------- Product grid ---------- */
+    #tab-content .min_heigh_70,
+    #tab-content .product-grid {
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)) !important;
+        gap: 0.6rem;
+        padding: 0.5rem;
+    }
+
+    .card_style {
+        min-height: 130px !important;
+        max-height: 195px !important;
+        padding: 8px;
+        border-radius: 14px;
+    }
+
+    .card_style img {
+        max-height: 85px !important;
+        min-height: 85px !important;
+        border-radius: 10px;
+    }
+
+    .card_style .add-to-cart-btn>div:last-child {
+        height: 80px !important;
+        padding: 6px;
+        margin-top: 4px;
+    }
+
+    .product-name-card {
+        font-size: 12.5px;
+        min-height: 34px;
+    }
+
+    .pricing {
+        font-size: 14px !important;
+    }
+
+
+    .product-text-card {
+        font-size: 11px !important;
+    }
+
+    .pricing {
+        font-size: 13px !important;
+    }
+
+    del.pricing {
+        font-size: 10.5px !important;
+    }
+
+    .info {
+        font-size: 14px !important;
+        padding: 4px;
+    }
+
+    /* ---------- Sidebar / resizer ---------- */
+    #sidebar {
+        min-width: 250px;
+    }
+
+    /* ---------- Drawer menu ---------- */
+    #drawer {
+        gap: 0.5rem;
+        padding: 0.5rem;
+    }
+
+    #drawer i {
+        font-size: 15px;
+    }
+
+    #drawer .font-medium {
+        font-size: 11px;
+    }
+
+    #drawer .w-12.h-12 {
+        width: 2.25rem;
+        height: 2.25rem;
+    }
+
+    /* ---------- Modals on this page ---------- */
+    #default-modal-sale-list .grid,
+    #default-modal-expense-list .grid {
+        gap: 0.5rem;
+    }
+
+    #default-modal-sale-list input,
+    #default-modal-sale-list select,
+    #default-modal-expense-list input,
+    #default-modal-expense-list select {
+        padding-top: 6px;
+        padding-bottom: 6px;
+        font-size: 12px;
+    }
+
+    #Table-sale-order thead th,
+    #Table-sale-order tbody td {
+        padding: 4px 6px;
+        font-size: 11.5px;
+    }
+
+    /* sale-list modal: hide misaligned filter icons */
+    #default-modal-sale-list .fa-user.absolute,
+    #default-modal-sale-list .fa-box.absolute {
+        display: none;
+    }
+
+    #customer_search,
+    #product_search,
+    #document_search_invoice {
+        padding-left: 12px !important;
+    }
+
+
+    /* bottom drawer: header = 60px peek, no open-state gap */
+    #drawer-body {
+        min-height: 60px;
+        display: flex;
+        align-items: center;
+        padding: 8px 16px;
+    }
+    .fa-warehouse{
+        display: none;
+    }
+    #fa-user-tie2{
+        display: none;
+    }
+    .fa-magnifying-glass{
+        display: none;
+    }
+}
+
+/* ==========================================================
+   SMALL LAPTOPS ONLY: 1000px – 1199px  (e.g. 1024×768)
+   Extra squeeze on top of the block above
+   ========================================================== */
+@media (min-width: 1000px) and (max-width: 1199px) {
+
+    #sidebar {
+        flex: 0 0 auto;
+        /* basis defers to width (Tailwind class / resize JS) */
+        width: 280px;
+    }
+
+    #tab-content .min_heigh_70 {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+    }
+
+    .card_style img {
+        max-height: 80px !important;
+        min-height: 80px !important;
+    }
+
+    .card_style .add-to-cart-btn>div:last-child {
+        height: 75px !important;
+    }
+
+    #search-dropdown {
+        width: 9rem;
+    }
+
+    #tab-content .min_heigh_70,
+    #tab-content .product-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+    }
+
+    .card_style img {
+        max-height: 80px !important;
+        min-height: 80px !important;
+    }
+
+    .card_style .add-to-cart-btn>div:last-child {
+        height: 75px !important;
+    }
+
+    #search-dropdown {
+        width: 8rem;
+    }
+
+    /* sale-list modal: hide misaligned filter icons */
+    #default-modal-sale-list .fa-user.absolute,
+    #default-modal-sale-list .fa-box.absolute {
+        display: none;
+    }
+
+    #customer_search,
+    #product_search,
+    #document_search_invoice {
+        padding-left: 12px !important;
+    }
+}
+
+/* ============================================================
+   PREMIUM BUTTON SYSTEM (app-wide)
+   -----------------------------------------------------------
+   Unifies every <button> across the app to ONE consistent shape
+   — a slightly-rounded flat square, replacing the previous mix
+   of full pills / 2xl / xl / lg corners scattered across pages —
+   plus a subtle "lift" shadow on hover/press for a premium feel.
+   Colors/backgrounds are untouched; only geometry + elevation.
+   ============================================================ */
+button {
+    border-radius: 8px !important;
+}
+
+button:not(:disabled) {
+    transition: box-shadow 0.15s ease, transform 0.1s ease;
+}
+
+button:not(:disabled):hover {
+    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.15);
+    transform: translateY(-1px);
+}
+
+button:not(:disabled):active {
+    transform: translateY(0);
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+button:disabled {
+    cursor: not-allowed;
+}
+
+/* ---------- Pagination: one shared component for every table's
+   prev / page-number / next controls, replacing the ~6 different
+   ad-hoc styles previously scattered across the JS renderers ---------- */
+.page-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.page-btn:hover:not(:disabled):not(.page-btn-active) {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+}
+
+.page-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+.page-btn-active {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #fff;
+}
+
+.page-btn-active:hover {
+    background: #1d4ed8 !important;
+}
+
+/* ============================================================
+   PREMIUM INPUT SYSTEM (app-wide)
+   -----------------------------------------------------------
+   Unifies every text/date/number/search input, select, and
+   textarea across the app to ONE consistent shape — a slightly
+   rounded flat square (4px), replacing the previous mix of
+   lg/xl/2xl rounded corners scattered across filter bars, forms,
+   and the cart. Matches the button system's "slightly rounded
+   flat premium" language, just less rounded than buttons (8px)
+   so inputs read as flatter/quieter than actionable controls.
+   Colors/borders/padding are untouched; only corner radius.
+   ============================================================ */
+input[type="text"],
+input[type="search"],
+input[type="date"],
+input[type="datetime-local"],
+input[type="number"],
+input[type="email"],
+input[type="password"],
+input[type="tel"],
+select,
+textarea {
+    border-radius: 4px !important;
+}

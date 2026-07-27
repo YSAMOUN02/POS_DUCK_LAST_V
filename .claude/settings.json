@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\itsupport1\\\\Desktop\\\\POS_CONFIREL\\\\POS_CONFIREL\\\\POS_CONFIREL_LAST_V\" -Force -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^\\\\.git' } | Select-Object FullName, Length)",
+      "PowerShell(git config user.name)",
+      "PowerShell(git config user.email)",
+      "PowerShell(git init)",
+      "PowerShell(git branch -M main)",
+      "PowerShell(git remote add origin https://github.com/YSAMOUN02/YSAMOUN02-POS_CONFIREL_LAST_V.git)",
+      "PowerShell(git add -A; Write-Output \"=== Checking for sensitive files in staging ===\"; git ls-files --cached | Select-String -Pattern '\\(^|/\\)\\\\.env$|\\(^|/\\)\\\\.env\\\\.' ; Write-Output \"=== vendor/node_modules staged? \\(should be empty\\) ===\"; git ls-files --cached | Select-String -Pattern '^\\(vendor|node_modules\\)/' | Measure-Object | Select-Object -ExpandProperty Count; Write-Output \"=== Total files staged ===\"; \\(git ls-files --cached | Measure-Object -Line\\).Lines)"
+    ]
+  }
+}

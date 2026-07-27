@@ -1,0 +1,50 @@
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+!.env.example
+
+# IDE
+/.idea
+/.vscode
+/.fleet
+/.zed
+
+# PHP / Laravel
+/vendor
+/storage/*.key
+/storage/pail
+/storage/framework/*
+/bootstrap/cache/*
+
+# Database dumps written by `php artisan pos:truncate --backup`.
+# These contain real customer names, phones and addresses — never commit them.
+/storage/app/backups
+*.sql
+
+# Generated print artefacts (thermal receipt images)
+/storage/app/private
+/storage/app/receipts
+
+# Node / Vite
+/node_modules
+/public/build
+/public/hot
+
+# Optional (your custom stuff)
+/public/assets/startic_img/
+/public/storage
+
+# Misc
+auth.json
+.phpactor.json
+.phpunit.result.cache
+/.phpunit.cache
+Homestead.json
+Homestead.yaml
