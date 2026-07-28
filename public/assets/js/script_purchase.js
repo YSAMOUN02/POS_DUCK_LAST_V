@@ -717,25 +717,72 @@ function renderPurchaseLinesPagination(meta) {
 });
 
 
+// Which currency the Purchase Details modal is showing. factor 1 = USD.
+let purchaseViewCurrency = { factor: 1, currency: "$" };
+
+/**
+ * Currency a purchase should open in.
+ *
+ * A Khmer-speaking buyer works in riel, so opening every GRN in USD meant
+ * toggling on each one. Uses the document's OWN factor, not today's rate, so an
+ * old receipt still reads at the rate it was bought at.
+ */
+function defaultPurchaseCurrency(purchase) {
+    const factor = Number(purchase?.factor || 1);
+    const isKhmer = typeof app_locale !== "undefined" && app_locale === "km";
+
+    if (isKhmer && factor > 1) {
+        return { factor, currency: purchase?.currency_name || "៛" };
+    }
+    return { factor: 1, currency: "$" };
+}
+
+function togglePurchaseCurrency() {
+    if (!currentPurchase) return;
+
+    const docFactor = Number(currentPurchase.factor || 1);
+    const docCurrency = currentPurchase.currency_name || "៛";
+
+    purchaseViewCurrency =
+        purchaseViewCurrency.factor === 1 && docFactor > 1
+            ? { factor: docFactor, currency: docCurrency }
+            : { factor: 1, currency: "$" };
+
+    renderPurchaseLineModal(currentPurchase);
+}
+
 function openPurchaseLineModal(purchase) {
-        currentPurchase = purchase;
+    currentPurchase = purchase;
+    purchaseViewCurrency = defaultPurchaseCurrency(purchase);
+    renderPurchaseLineModal(purchase);
+}
+
+function renderPurchaseLineModal(purchase) {
     const modal = document.getElementById("purchaseLineModal");
     modal.classList.remove("hidden");
 
-    console.log(purchase);
-    document.getElementById("purchase-no").innerText = purchase.no ?? "-";
-    document.getElementById("purchase-created-by").innerText =
-        purchase.created_by ?? "-";
-    document.getElementById("purchase-posting-date").innerText =
-        purchase.posting_date ?? "-";
+    const setText = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.innerText = value || "-";
+    };
 
-    document.getElementById("purchase-remark").innerText =
-        purchase.remark ?? "-";
+    setText("purchase-no", purchase.no);
+    setText("purchase-created-by", purchase.created_by);
+    setText("purchase-posting-date", purchase.posting_date);
+    setText("purchase-remark", purchase.remark);
+    setText("purchase-vendor", purchase.vendor?.name);
+    setText("purchase-vendor-id", purchase.vendor_id);
 
-    document.getElementById("purchase-vendor").innerText =
-        purchase.vendor?.name ?? "-";
-    document.getElementById("purchase-vendor-id").innerText =
-        purchase.vendor_id ?? "-";
+    // Which site received the goods and at what rate — the two facts that make
+    // one receipt different from another with the same items.
+    setText("purchase-warehouse", purchase.location_name);
+    setText("purchase-payment-method", purchase.payment_method);
+    setText(
+        "purchase-currency",
+        Number(purchase.factor) > 1
+            ? `1$ = ${Number(purchase.factor).toLocaleString("en-US")} ${purchase.currency_name ?? ""}`.trim()
+            : (purchase.currency_name ?? "$"),
+    );
 
     const tbody = document.getElementById("purchase-line-data");
     tbody.innerHTML = "";
@@ -743,8 +790,25 @@ function openPurchaseLineModal(purchase) {
     let totalQty = 0;
     let totalAmount = 0;
 
-    const factor = parseFloat(purchase.factor) ?? 1;
-    const currency_name = purchase.currency_name ?? "$";
+    // Amounts are stored in base USD; the view currency decides what they are
+    // multiplied by, so the same document can be read either way.
+    const factor = Number(purchaseViewCurrency.factor) || 1;
+    const currency_name = purchaseViewCurrency.currency ?? "$";
+
+    // The toggle offers whichever currency is NOT on screen. A purchase saved in
+    // dollars has no second currency, so the button is hidden entirely.
+    const docFactor = Number(purchase.factor || 1);
+    const toggleBtn = document.getElementById("btn-toggle-purchase-currency");
+    if (toggleBtn) {
+        toggleBtn.style.display = docFactor > 1 ? "inline-flex" : "none";
+        const lbl = document.getElementById("purchase-currency-toggle-label");
+        if (lbl) {
+            lbl.textContent =
+                factor === 1
+                    ? `View in ${purchase.currency_name || "៛"}`
+                    : "View in $";
+        }
+    }
     (purchase.lines ?? []).forEach((line, index) => {
         totalQty += Number(line.quantity ?? 0);
         totalAmount += Number(line.line_amount ?? 0);
@@ -778,11 +842,11 @@ function openPurchaseLineModal(purchase) {
     document.getElementById("purchase-total-qty").innerText =
         formatQty(totalQty);
 
-    // Final converted (Riel or other)
+    setText("purchase-total-lines", String((purchase.lines ?? []).length));
+
+    // Grand total follows the same view currency as the lines above it.
     document.getElementById("purchase-grand-total").innerText =
-        formatMoneyPlain(totalAmount * (purchase.factor ?? 1), purchase.factor ?? 1) +
-        " " +
-        (purchase.currency_name ?? "");
+        formatMoneyPlain(totalAmount * factor, factor) + " " + currency_name;
 }
 
 function closePurchaseLineModal() {

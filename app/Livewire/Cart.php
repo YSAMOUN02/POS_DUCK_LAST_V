@@ -63,6 +63,21 @@ class Cart extends Component
 
     public $vat_status = 0;
     public $cart_mode = 'normal';
+
+    /**
+     * Warehouse this sale draws stock from.
+     *
+     * A sale used to deduct FEFO across EVERY warehouse the user could reach, so
+     * one invoice could quietly pull three units from one site and two from
+     * another. One document now belongs to one warehouse.
+     *
+     * Only offered when the user actually has a choice; with a single warehouse
+     * it is selected silently and no control is shown.
+     */
+    public $sale_warehouse_id = '';
+
+    /** id => name, limited to warehouses usable for selling. */
+    public $saleWarehouses = [];
     public $openIndex = null;
 
     // Sale Order Info
@@ -132,6 +147,10 @@ class Cart extends Component
     #[\Livewire\Attributes\On('payment-expenses')]
     public function paymentExpenses($payload = [])
     {
+        // Recording an expense moves money and was previously ungated — any user
+        // who could open the POS could book one against the business.
+        abort_unless(Auth::user()->hasPermission('expense.create'), 403);
+
         if (empty($this->cart)) {
             $this->dispatch('payment-error', ['message' => 'Cart is empty']);
             return;
@@ -210,7 +229,8 @@ class Cart extends Component
         }
 
         $riel = Currency::where('code', '៛')->firstOrFail();
-        $warehouse_ids = Auth::user()->warehouses->pluck('id');
+        // One document, one warehouse — never FEFO across sites.
+        $warehouse_ids = $this->saleWarehouseIds();
 
         $invoice = InvoiceHeader::create([
             'sale_order_id'    => $saleOrder->id,
@@ -684,8 +704,66 @@ class Cart extends Component
         }
     }
     #[\Livewire\Attributes\On('mount')]
+    /**
+     * Warehouses this user may sell from — their own, minus any restricted to
+     * purchasing. Auto-selects when there is only one, so the picker is only
+     * ever shown to someone who genuinely has a choice.
+     */
+    public function loadSaleWarehouses(): void
+    {
+        $this->saleWarehouses = Warehouse::whereIn('id', Auth::user()->warehouses->pluck('id'))
+            ->usableFor('sale')
+            ->orderBy('name')
+            ->pluck('name', 'id')
+            ->toArray();
+
+        if (count($this->saleWarehouses) === 1) {
+            $this->sale_warehouse_id = (string) array_key_first($this->saleWarehouses);
+        }
+    }
+
+    /**
+     * Warehouse ids a sale may draw from.
+     *
+     * Scoped to the chosen warehouse once one is set. Falls back to all of the
+     * user's sale warehouses only when none was chosen — which happens when the
+     * user has exactly one (auto-selected above) or none at all.
+     */
+    private function saleWarehouseIds(): array
+    {
+        if ($this->sale_warehouse_id !== '' && $this->sale_warehouse_id !== null) {
+            return [(int) $this->sale_warehouse_id];
+        }
+
+        // Ambiguous: refuse rather than quietly deducting across every site.
+        // Reachable when a saved sale order is loaded into a fresh cart, since
+        // sale orders carry no warehouse of their own.
+        if (count($this->saleWarehouses) > 1) {
+            throw new \Exception(__('Select a warehouse before completing this sale.'));
+        }
+
+        return array_map('intval', array_keys($this->saleWarehouses))
+            ?: Auth::user()->warehouses->pluck('id')->all();
+    }
+
+    /**
+     * The picker locks once the cart has lines — see $sale_warehouse_id.
+     *
+     * Only locks after a warehouse has actually been chosen. Loading a saved
+     * sale order fills the cart without setting one, and locking there would
+     * strand the user with no way to pick.
+     */
+    public function getSaleWarehouseLockedProperty(): bool
+    {
+        return ! empty($this->cart)
+            && $this->sale_warehouse_id !== ''
+            && $this->sale_warehouse_id !== null;
+    }
+
     public function mount()
     {
+        $this->loadSaleWarehouses();
+
         // ✅ Load currencies ONCE
         $this->all_currency = Currency::all();
 
@@ -800,6 +878,19 @@ class Cart extends Component
         $product = json_decode($productJson, true);
 
         if (!is_array($product) || !isset($product['id'])) {
+            return;
+        }
+
+        // A stock line has to know which warehouse it leaves. Without this the
+        // fallback in saleWarehouseIds() would span every warehouse again.
+        if (
+            ($product['type'] ?? '') === 'product'
+            && count($this->saleWarehouses) > 1
+            && ($this->sale_warehouse_id === '' || $this->sale_warehouse_id === null)
+        ) {
+            $this->dispatch('product_item_prevented', [
+                'message' => __('Select a warehouse first'),
+            ]);
             return;
         }
 
@@ -1103,6 +1194,50 @@ class Cart extends Component
             ]);
         }
     }
+    /**
+     * Nudge a line's quantity by a whole unit, from the right-click stepper.
+     *
+     * Goes through recalcLine like every other qty change, so discount, VAT and
+     * the line total are recomputed by the same code path — a stepper that wrote
+     * qty directly would leave the totals stale.
+     *
+     * Clamped server-side: the caller is a mouse wheel, and stock limits are not
+     * the browser's to enforce.
+     */
+    #[\Livewire\Attributes\On('set-qty')]
+    public function setQtyFromStepper($index, $qty)
+    {
+        if (! isset($this->cart[$index])) {
+            return;
+        }
+
+        // An ABSOLUTE quantity, not a delta. Deltas raced: the stepper sent one
+        // while an earlier round trip was still in flight, the row re-rendered
+        // with a stale baseline, and the number snapped backwards — so a wheel
+        // could never climb past a dozen or so.
+        $next = round((float) $qty, 2);
+
+        // Never below one unit — removing a line is the remove button's job, not
+        // something a stray scroll should do.
+        if ($next < 0.01) {
+            $next = 0.01;
+        }
+
+        $type = $this->cart[$index]['type'] ?? 'product';
+        $stock = (float) ($this->cart[$index]['stock'] ?? 0);
+
+        // Services have no stock to run out of; goods are capped at what is there.
+        if ($type !== 'service' && $stock > 0 && $next > $stock) {
+            $next = $stock;
+            $this->dispatch('app-error', [
+                'message' => 'Only ' . rtrim(rtrim(number_format($stock, 2, '.', ''), '0'), '.') . ' in stock.',
+            ]);
+        }
+
+        $this->cart[$index]['qty'] = $next;
+        $this->recalcLine($index, 'qty');
+    }
+
     public function recalcLine($index, $field, $inputValue = null)
     {
         $precision = 10;   // base unit price keeps 10 dp so riel survives re-multiplication
@@ -1982,7 +2117,8 @@ class Cart extends Component
                     $cartLots = $cartItem['lots'] ?? [];
                     $saleQty = $qty;
 
-                    $warehouse_ids = Auth::user()->warehouses->pluck('id');
+                    // One document, one warehouse — never FEFO across sites.
+                    $warehouse_ids = $this->saleWarehouseIds();
                     if (!empty($cartLots)) {
                         foreach ($cartLots as $lot) {
 
@@ -2352,6 +2488,74 @@ class Cart extends Component
     }
 
     #[On('saveQuotation')]
+    /**
+     * Build the quotation exactly as saveQuotation would, but write nothing and
+     * hand it straight to the printer.
+     *
+     * Gated on quotation.view rather than .create: looking at what a quotation
+     * would say is not the same as issuing one, and a user who may only read
+     * quotations should still be able to show a customer the figures.
+     *
+     * The per-line arithmetic mirrors saveQuotation on purpose — a preview that
+     * totals differently from the document it previews is worse than none.
+     */
+    public function previewQuotation($payload = [])
+    {
+        abort_unless(Auth::user()->hasPermission('quotation.view'), 403);
+
+        if (empty($this->cart)) {
+            $this->dispatch('payment-error', ['message' => 'Cart is empty']);
+            return;
+        }
+
+        $lines = [];
+        $totalAmount = 0.0;
+        $totalDiscount = 0.0;
+        $totalVAT = 0.0;
+
+        foreach ($this->cart as $cartItem) {
+            $qty = max(0.01, (float) ($cartItem['qty'] ?? 1));
+            $sellPrice = (float) ($cartItem['price'] ?? $cartItem['sell_price'] ?? 0);
+            $vatRate = (float) ($cartItem['vat'] ?? 0);
+            $discountPercent = (float) ($cartItem['discount_percent'] ?? 0);
+
+            $lineAmount = round($sellPrice * $qty, 4);
+            $discountAmount = round(($lineAmount * $discountPercent) / 100, 4);
+            $netAmount = round($lineAmount - $discountAmount, 4);
+            $vatAmount = round(($netAmount * $vatRate) / 100, 4);
+
+            $totalAmount += $lineAmount;
+            $totalDiscount += $discountAmount;
+            $totalVAT += $vatAmount;
+
+            $lines[] = [
+                'name'               => $cartItem['name'] ?? '',
+                'unit'               => $cartItem['unit'] ?? '',
+                'quantity'           => $qty,
+                'sell_price'         => $sellPrice,
+                'grand_total_amount' => round($netAmount + $vatAmount, 4),
+            ];
+        }
+
+        $this->dispatch('quotation-preview', [
+            'header' => [
+                // No number is issued — nothing was saved, and printing a real
+                // looking quotation number on an unsaved document invites someone
+                // to quote against it.
+                'quotation_no'    => 'PREVIEW',
+                'customer_name'   => $payload['customer_name'] ?? 'Walk-in Customer',
+                'phone'           => $payload['customer_phone'] ?? '',
+                'address'         => $payload['customer_address'] ?? '',
+                'remarks'         => $payload['remark'] ?? '',
+                'total_amount'    => round($totalAmount, 4),
+                'discount_amount' => round($totalDiscount, 4),
+                'vat_amount'      => round($totalVAT, 4),
+                'grand_total'     => round($totalAmount - $totalDiscount + $totalVAT, 4),
+            ],
+            'lines' => $lines,
+        ]);
+    }
+
     public function saveQuotation($payload)
     {
         abort_unless(Auth::user()->hasPermission('quotation.create'), 403);
@@ -3008,7 +3212,10 @@ public function openStockAdjustment()
 
     $warehouse_ids = Auth::user()->warehouses->pluck('id');
 
+    // A purchase-only warehouse is receiving stock, not selling it, so it is
+    // not offered on the sale side.
     $warehouses = Warehouse::whereIn('id', $warehouse_ids)
+        ->usableFor('sale')
         ->orderBy('name')
         ->get(['id', 'name'])
         ->toArray();

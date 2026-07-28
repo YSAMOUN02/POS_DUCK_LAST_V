@@ -2,7 +2,7 @@
 <html lang="km">
 <head>
 <meta charset="UTF-8">
-<title>POS Confirel - Customer Display</title>
+<title>POS - Customer Display</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Khmer:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
     * { margin:0; box-sizing:border-box; font-family:"Noto Serif Khmer", serif; }
@@ -124,7 +124,7 @@
 </head>
 <body>
     <header>
-        <div class="brand">CONFIREL</div>
+        <div class="brand">POS System</div>
         <div class="doc" id="cd-doc"></div>
     </header>
 

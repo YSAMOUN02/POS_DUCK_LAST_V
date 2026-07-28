@@ -30,6 +30,7 @@ class PermissionSeeder extends Seeder
             'exchange_rate'   => 'Exchange Rate',
             'user'            => 'Manage Users',
             'company_profile' => 'Company Profile',
+            'expense'         => 'Expenses',
             'report'          => 'Reports',
         ];
 
@@ -52,9 +53,16 @@ class PermissionSeeder extends Seeder
             'exchange_rate'   => ['view', 'edit'],
             'user'            => ['view', 'create', 'edit'],
             'company_profile' => ['view', 'edit'],
+            // Recording an expense was previously ungated entirely — anyone who
+            // could open the POS could book one. "report.expense" governs the
+            // REPORT; these govern the feature itself.
+            'expense'         => ['view', 'create', 'refund'],
             // "profit" is separate from "dashboard" so an admin can grant the
             // KPI/dashboard screens without exposing cost and margin figures.
-            'report'          => ['dashboard', 'sales', 'expense', 'stock', 'profit'],
+            // "export" gates every Excel/CSV download across the app — a user can
+            // be allowed to READ a report on screen without being able to take
+            // the underlying data out of the building.
+            'report'          => ['dashboard', 'sales', 'expense', 'stock', 'profit', 'export'],
         ];
 
         $actionLabels = [
@@ -88,6 +96,9 @@ class PermissionSeeder extends Seeder
             'pos_sale.view_list'          => 'Product View: List (POS)',
             'purchasing.purchase'         => 'Create Purchase',
             'purchasing.purchase_return'  => 'Purchase Return',
+            'expense.view'                => 'View Expenses',
+            'expense.create'              => 'Record Expense',
+            'expense.refund'              => 'Refund Expense',
             'warehouse.adjustment'        => 'Stock Adjustment',
             'warehouse.transfer'          => 'Transfer (Different Warehouse)',
             'warehouse.movement'          => 'Movement (Same Warehouse, Between Bins)',
@@ -99,6 +110,7 @@ class PermissionSeeder extends Seeder
             'report.expense'              => 'Expense Report',
             'report.stock'                => 'Stock In/Out Report',
             'report.profit'               => 'Profit / Cost Report',
+            'report.export'               => 'Export to Excel / CSV',
         ];
 
         $keptIds = [];

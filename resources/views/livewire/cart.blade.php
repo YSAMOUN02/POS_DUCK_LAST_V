@@ -25,6 +25,19 @@
 
                     <span class="hd-sep"></span>
 
+                    {{-- Drag items into the cart instead of tapping them. Off by
+                         default: tapping stays the fastest way to ring up a sale,
+                         and a drag gesture on a touch screen can fight scrolling. --}}
+                    <label class="hd-item" title="{{ __('Drag items to cart') }}">
+                        <i class="fa-solid fa-hand-pointer"></i>
+                        <span class="cd-switch">
+                            <input type="checkbox" id="dragToCartToggle">
+                            <span class="cd-track"><span class="cd-knob"></span></span>
+                        </span>
+                    </label>
+
+                    <span class="hd-sep"></span>
+
                     {{-- Display theme --}}
                     <button type="button" id="displayThemeToggle" class="hd-item"
                         title="Customer Display: Dark / Light">
@@ -578,7 +591,11 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
 
                 @forelse ($cart as $item)
                     <div class="w-full mx-auto animate-add">
-                        <div class="ci-card">
+                        {{-- data-* drive the right-click quantity stepper (qty_stepper.js):
+                             it needs the row index to adjust, and the name/qty to show. --}}
+                        <div class="ci-card" data-cart-index="{{ $loop->index }}"
+                            data-cart-name="{{ $item['name'] ?? '' }}" data-cart-qty="{{ $item['qty'] ?? 0 }}"
+                            data-cart-locked="{{ $locked ? '1' : '0' }}">
 
                             {{-- ===== Header (clickable) ===== --}}
                             <div class="ci-header {{ $locked ? 'ci-locked' : '' }}"
@@ -743,11 +760,11 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                             class="w-24 h-24 lg:w-28 lg:h-28 object-contain opacity-80">
 
                         <h3 class="mt-4 text-lg font-bold text-slate-800">
-                            No items in cart
+                            {{ __('No items in cart') }}
                         </h3>
 
                         <p class="mt-1 text-sm text-slate-500 max-w-xs">
-                            Scan a barcode or select a product to start building the order.
+                            {{ __('Scan a barcode or select a product to start building the order.') }}
                         </p>
 
                     </div>
@@ -892,6 +909,42 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                             </div>
                         @endif
                     </div>
+
+                    {{-- Only shown when the user actually has a choice of sale warehouse.
+                         Locks once the cart has lines: one document, one warehouse. --}}
+                    @if (count($saleWarehouses) > 1)
+                        <div class="mt-3">
+                            <div class="relative">
+                                <i
+                                    class="fa-solid fa-warehouse absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                                <select wire:model.live="sale_warehouse_id"
+                                    @disabled($this->saleWarehouseLocked)
+                                    class="w-full border border-gray-300 rounded-xl
+                                           pl-10 pr-8 py-2 h-[42px] appearance-none
+                                           shadow-sm focus:ring-2 focus:ring-blue-300
+                                           focus:outline-none text-gray-700
+                                           disabled:bg-gray-100 disabled:text-gray-500
+                                           disabled:cursor-not-allowed">
+                                    <option value="">{{ __('Select Warehouse') }}...</option>
+                                    @foreach ($saleWarehouses as $id => $name)
+                                        <option value="{{ $id }}">{{ $name }}</option>
+                                    @endforeach
+                                </select>
+                                @if ($this->saleWarehouseLocked)
+                                    <i
+                                        class="fa-solid fa-lock absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
+                                @endif
+                            </div>
+                            <p class="mt-1 text-xs text-gray-500">
+                                @if ($this->saleWarehouseLocked)
+                                    {{ __('Locked while the cart has items. Clear the cart to change warehouse.') }}
+                                @else
+                                    {{ __('All items on this document are sold from one warehouse.') }}
+                                @endif
+                            </p>
+                        </div>
+                    @endif
+
                     <hr>
                     <div class="mt-5 grid grid-cols-4 gap-2">
 

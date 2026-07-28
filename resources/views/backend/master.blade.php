@@ -30,7 +30,7 @@
     <livewire:styles />
     <script src="{{ asset('assets/js/html2canvas.min.js') }}"></script>
     <script src="{{ asset('assets/js/qz-tray.js') }}"></script>
-    <title>POS Confirel</title>
+    <title>POS System</title>
 </head>
 
 <body>
@@ -300,7 +300,6 @@
     {{-- ALL modals will be printed here --}}
     @stack('modals')
 
-    @include('backend._gain-cost-line-explorer')
 
 
 
@@ -431,7 +430,10 @@
                 badge.textContent = n;
                 badge.style.display = n > 0 ? 'flex' : 'none';
             }
-            setInterval(updateMobileBadge, 500);
+            // Called by syncDisplay() when the cart actually changes — see the
+            // note there. Polling this twice a second parsed the cart JSON
+            // ~5,000 times an hour to redraw a number that rarely moves.
+            window.updateMobileBadge = updateMobileBadge;
 
             // adding a product opens nothing, but pulse the button as feedback
             window.addEventListener('click', (e) => {
@@ -549,7 +551,6 @@
             }
         });
 
-        setInterval(broadcastCart, 400);
 
         // ===== Customer Display sync (server-based) =====
         let lastSent = '';
@@ -584,7 +585,38 @@
                 });
             } catch (e) {}
         }
-        setInterval(pushDisplayState, 400);
+        /* ===== Display sync: event-driven, not polled =====
+           pushDisplayState used to run on a 400ms timer, so every open POS tab
+           woke up 150 times a minute and POSTed whenever the cart differed —
+           which is what was loading the server.
+
+           The cart only changes when Livewire re-renders it (adding an item,
+           changing a quantity, removing a line, completing a sale), so that is
+           when this now fires. HEARTBEAT is a safety net for state that changes
+           without a re-render — the display theme, or a customer screen opened
+           after the last push — not a substitute for it.
+
+           lastSent / lastPayload still guard the POST, so a re-render that did
+           not actually change the cart costs nothing. */
+        const DISPLAY_HEARTBEAT = 5 * 60 * 1000; // 5 minutes
+
+        function syncDisplay(force = false) {
+            window.updateMobileBadge?.();
+            broadcastCart(force);      // localStorage -> customer display tab
+            pushDisplayState(force);   // server -> customer display on another device
+        }
+
+        // Cart re-rendered: an item was added, edited, removed, or the sale closed.
+        document.addEventListener('livewire:update', () => syncDisplay());
+
+        // A completed sale clears the cart; push the final state immediately
+        // rather than waiting for the next re-render.
+        window.addEventListener('payment-success', () => syncDisplay(true));
+
+        document.addEventListener('DOMContentLoaded', () => syncDisplay(true));
+        if (document.readyState !== 'loading') syncDisplay(true);
+
+        setInterval(() => syncDisplay(), DISPLAY_HEARTBEAT);
 
 
         // ===== Customer Display theme button (controls display only) =====
@@ -698,6 +730,23 @@
 
     <script
         src="{{ asset('assets/js/print_document_a4.js') }}?v={{ filemtime(public_path('assets/js/print_document_a4.js')) }}">
+    </script>
+
+    {{-- Optional drag-a-card-into-the-cart input mode, toggled from the cart
+         header. Loaded last so the product grid and cart already exist. --}}
+    <script
+        src="{{ asset('assets/js/drag_to_cart.js') }}?v={{ filemtime(public_path('assets/js/drag_to_cart.js')) }}">
+    </script>
+
+    {{-- Right-click a cart line for a wheel-driven quantity stepper. --}}
+    <script
+        src="{{ asset('assets/js/qty_stepper.js') }}?v={{ filemtime(public_path('assets/js/qty_stepper.js')) }}">
+    </script>
+
+    {{-- Horizontal drag divider under the product grid — the height counterpart
+         to the vertical #resizer that sets the cart width. --}}
+    <script
+        src="{{ asset('assets/js/grid_resizer.js') }}?v={{ filemtime(public_path('assets/js/grid_resizer.js')) }}">
     </script>
 
 </body>

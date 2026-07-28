@@ -1804,10 +1804,23 @@ function closeWarehouseListModal() {
     modal.classList.add("hidden");
 }
 
+// Which side of the business may use a warehouse. "Both" is deliberately muted —
+// it is the default and the common case, so only a restriction should draw the eye.
+function warehouseUsageBadge(type) {
+    const map = {
+        sale: ["Sale only", "bg-emerald-100 text-emerald-800"],
+        purchase: ["Purchase only", "bg-sky-100 text-sky-800"],
+    };
+    const [label, cls] = map[type] ?? ["Sale & Purchase", "bg-gray-100 text-gray-600"];
+
+    return `<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${cls}">${label}</span>`;
+}
+
 async function loadWarehouseCrudList() {
     const tbody = document.getElementById("warehouse-crud-tbody");
     if (!tbody) return;
-    const noteColspan = typeof is_admin !== "undefined" && is_admin ? 5 : 4;
+    // +1 for the Usage column added alongside Name / Location.
+    const noteColspan = typeof is_admin !== "undefined" && is_admin ? 6 : 5;
     tbody.innerHTML = `<tr><td colspan="${noteColspan}" class="px-3 py-4 text-center text-gray-500">Loading...</td></tr>`;
 
     try {
@@ -1827,6 +1840,7 @@ async function loadWarehouseCrudList() {
             <tr>
                 <td class="px-3 py-2 font-semibold">${w.name ?? ""}</td>
                 <td class="px-3 py-2">${w.location ?? ""}</td>
+                <td class="px-3 py-2">${warehouseUsageBadge(w.type)}</td>
                 ${typeof is_admin !== "undefined" && is_admin ? `<td class="px-3 py-2 text-gray-500">${w.note ?? ""}</td>` : ""}
                 <td class="px-3 py-2 text-center">
                     <span class="px-2 py-1 rounded-lg text-xs font-bold ${active ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-500"}">
@@ -1861,6 +1875,10 @@ function openWarehouseFormModal(warehouse = null) {
     document.getElementById("warehouse_form_name").value = warehouse?.name ?? "";
     document.getElementById("warehouse_form_location").value = warehouse?.location ?? "";
 
+    // New warehouses start unrestricted; editing shows what is already set.
+    const typeEl = document.getElementById("warehouse_form_type");
+    if (typeEl) typeEl.value = warehouse?.type ?? "both";
+
     const noteEl = document.getElementById("warehouse_form_note");
     if (noteEl) noteEl.value = warehouse?.note ?? "";
 
@@ -1876,6 +1894,7 @@ async function saveWarehouseForm() {
     const id = document.getElementById("warehouse_form_id").value;
     const name = document.getElementById("warehouse_form_name").value.trim();
     const location = document.getElementById("warehouse_form_location").value.trim();
+    const typeEl = document.getElementById("warehouse_form_type");
     const noteEl = document.getElementById("warehouse_form_note");
 
     if (!name) {
@@ -1883,6 +1902,9 @@ async function saveWarehouseForm() {
     }
 
     const payload = { name, location };
+    // Only sent when the field is present — the controller keeps the existing
+    // value otherwise, so an older form cannot silently widen a restriction.
+    if (typeEl) payload.type = typeEl.value;
     if (noteEl) payload.note = noteEl.value;
 
     const btn = document.getElementById("warehouseFormSaveBtn");
@@ -6568,10 +6590,23 @@ async function printSaleOrderDataAs(kind) {
             await print_document_v2("Invoice", header, pos_profile_for_print, lines);
         } else if (kind === "table") {
             await printSaleOrderFullTableA4(header, lines, pos_profile_for_print);
+        } else if (kind === "picking") {
+            // The picking list is lot-level, so it comes from its own endpoint
+            // rather than the header/lines already loaded into this modal.
+            const id = header?.id ?? currentSaleOrderId;
+            const res = await fetch(`/picking-list-data/${id}`, {
+                headers: { Accept: "application/json", "X-Requested-With": "XMLHttpRequest" },
+            });
+            if (!res.ok) throw new Error(`picking list request failed (${res.status})`);
+            const data = await res.json();
+            await printPickingListA4(data.header, data.rows, pos_profile_for_print);
         }
     } catch (err) {
         console.error(err);
-        showToast({ message: "Failed to print", type: "error" });
+        showToast({
+            message: `Failed to print — ${err?.name ?? "Error"}: ${err?.message ?? err}`,
+            type: "error",
+        });
     }
 }
 
@@ -6649,6 +6684,25 @@ function listMoney(value, rowFactor) {
 // wins hoisting, so its currency toggle never actually worked.
 let saleOrderViewCurrency = { factor: 1, currency: "$" };
 
+/**
+ * Which currency a document detail should open in.
+ *
+ * A Khmer-speaking cashier works in riel, so opening every document in USD made
+ * them toggle on each one. The document's own factor is used — not today's rate
+ * — so a historical order still reads at the rate it was sold at. Falls back to
+ * USD when the document has no factor (it was priced in dollars) or the UI is
+ * in English.
+ */
+function defaultDetailCurrency(header) {
+    const factor = Number(header?.factor || 1);
+    const isKhmer = typeof app_locale !== "undefined" && app_locale === "km";
+
+    if (isKhmer && factor > 1) {
+        return { factor, currency: header?.currency_name || "៛" };
+    }
+    return { factor: 1, currency: "$" };
+}
+
 function toggleSaleOrderCurrency() {
     const header = currentSaleOrderData?.header ?? {};
     const headerFactor = Number(header.factor || 1);
@@ -6710,10 +6764,16 @@ async function viewSaleOrderLine(id) {
         const data = await res.json();
         currentSaleOrderData = data;
 
-        // Always start the view in USD, matching the list.
-        saleOrderViewCurrency = { factor: 1, currency: "$" };
+        // Open in the currency the user actually works in — riel for a Khmer UI,
+        // USD otherwise. The toggle still switches either way.
+        saleOrderViewCurrency = defaultDetailCurrency(data.header);
         const label = document.getElementById("sale-currency-toggle-label");
-        if (label) label.textContent = `View in ${data.header?.currency_name || "៛"}`;
+        if (label) {
+            label.textContent =
+                saleOrderViewCurrency.factor === 1
+                    ? `View in ${data.header?.currency_name || "៛"}`
+                    : "View in $";
+        }
 
         renderSaleOrderLine(data);
     } catch (e) {
@@ -6791,20 +6851,24 @@ function renderSaleOrderLine(data) {
     let html = "";
 
     (data.lines ?? []).forEach((line, index) => {
+        // A service (delivery fee and the like) has no quantity to count and
+        // nothing to ship, so those two cells stay empty rather than claiming a
+        // meaningless "0" — and the shipped cell no longer flags it red for
+        // being under-delivered.
+        const isService = (line.type ?? "product") === "service";
+        const shippedShort =
+            parseFloat(line.quantity_shiped ?? 0) < parseFloat(line.quantity ?? 0);
+
         html += `
             <tr class="border-b hover:bg-gray-50">
                 <td class="px-4 py-2">${index + 1}</td>
                 <td class="px-4 py-2">${line.item_code ?? ""}</td>
                 <td class="px-4 py-2">${line.name ?? ""}</td>
 
-                <td class="px-4 py-2 text-right">${formatQty(line.quantity)}</td>
+                <td class="px-4 py-2 text-right">${isService ? "" : formatQty(line.quantity)}</td>
 
-                <td class="px-4 py-2 text-right font-bold ${parseFloat(line.quantity_shiped ?? 0) >=
-                parseFloat(line.quantity ?? 0)
-                ? "text-green-500"
-                : "text-red-500"
-            }">
-                    ${formatQty(line.quantity_shiped)}
+                <td class="px-4 py-2 text-right font-bold ${isService ? "" : shippedShort ? "text-red-500" : "text-green-500"}">
+                    ${isService ? "" : formatQty(line.quantity_shiped)}
                 </td>
 
                 <td class="px-4 py-2 text-right">${formatCurrency(line.sell_price, factor, currency)} ${currency}</td>
@@ -7006,6 +7070,43 @@ function submitQuotation() {
         Livewire.dispatch("saveQuotation", { payload });
     }
 }
+
+// Same customer fields as submitQuotation, but routed to previewQuotation so
+// nothing is written — the server builds the document and hands it straight back
+// for printing.
+function previewQuotation() {
+    Livewire.dispatch("previewQuotation", {
+        payload: {
+            customer_name:
+                document.getElementById("quotation-customer-name")?.value ||
+                "Walk-in Customer",
+            customer_phone:
+                document.getElementById("quotation-customer-phone")?.value || "",
+            customer_address:
+                document.getElementById("quotation-customer-address")?.value || "",
+            remark: document.getElementById("quotation-remark")?.value || "",
+        },
+    });
+}
+
+window.addEventListener("quotation-preview", async (e) => {
+    const detail = e.detail?.[0] ?? e.detail ?? {};
+    try {
+        await printQuotationA4(
+            detail.header ?? {},
+            detail.lines ?? [],
+            typeof pos_profile_for_print !== "undefined"
+                ? pos_profile_for_print
+                : (window.pos_profile_for_print ?? null),
+        );
+    } catch (err) {
+        console.error("Quotation preview failed:", err);
+        showToast({
+            message: `Failed to preview quotation — ${err?.name ?? "Error"}: ${err?.message ?? err}`,
+            type: "error",
+        });
+    }
+});
 
 function closeQuotationModal() {
     const modal = document.getElementById("quotationModal");

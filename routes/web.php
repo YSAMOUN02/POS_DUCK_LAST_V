@@ -174,7 +174,9 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/item-ledger-entry', [ItemLedgerEntryController::class, 'index'])->middleware('permission:report.stock');
 
-    Route::get('/expenses/latest', [ExpenseController::class, 'latest'])->middleware('permission:report.expense');
+    Route::get('/expenses/latest', [ExpenseController::class, 'latest'])->middleware('permission:expense.view,report.expense');
+    // Refund an expense — writes a negative mirror row, never edits the original.
+    Route::post('/expenses/refund', [ExpenseController::class, 'refund'])->middleware('permission:expense.refund');
 
     Route::get('/get-sale-orders', [SaleOrderController::class, 'getSaleOrders'])->middleware('permission:pos_sale.view');
 
@@ -233,9 +235,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/transactions', [GainCostController::class, 'transactions']); // table (sales|purchases|expenses)
         Route::get('/detail',       [GainCostController::class, 'detail']);       // modal content (?type=&id=)
         Route::get('/stock',        [GainCostController::class, 'stock']);        // current stock charts (qty + value)
-        Route::get('/export',       [GainCostController::class, 'export']);       // CSV (?kind=summary|table&tab=)
-        Route::get('/export-excel', [GainCostController::class, 'exportExcel']);  // styled .xlsx workbook (current filters)
-        Route::get('/export-stock', [GainCostController::class, 'exportStock']);  // current stock list CSV
+        Route::get('/export',       [GainCostController::class, 'export'])->middleware('permission:report.export');
+        Route::get('/export-excel', [GainCostController::class, 'exportExcel'])->middleware('permission:report.export');
+        Route::get('/export-stock', [GainCostController::class, 'exportStock'])->middleware('permission:report.export');
         Route::get('/sales-detail', [GainCostController::class, 'salesDetail']);  // line explorer (async, paginated; ?export=csv)
         Route::get('/inventory', [GainCostController::class, 'inventory']);
         Route::get('/services', [GainCostController::class, 'services']);
@@ -248,9 +250,9 @@ Route::middleware(['auth'])->group(function () {
 
 
 
-    Route::get('/export-purchase', [PurchasingController::class, 'exportPurchase'])->name('purchase.export')->middleware('permission:purchasing.view');
-    Route::get('/sale-report/export-excel', [SaleOrderController::class, 'exportSalesExcel'])->name('sale.export.excel')->middleware('permission:report.sales');
-    Route::get('/products/export-excel', [ProductController::class, 'exportProducts'])->middleware('permission:product.view');
+    Route::get('/export-purchase', [PurchasingController::class, 'exportPurchase'])->name('purchase.export')->middleware(['permission:purchasing.view', 'permission:report.export']);
+    Route::get('/sale-report/export-excel', [SaleOrderController::class, 'exportSalesExcel'])->name('sale.export.excel')->middleware(['permission:report.sales', 'permission:report.export']);
+    Route::get('/products/export-excel', [ProductController::class, 'exportProducts'])->middleware(['permission:product.view', 'permission:report.export']);
 
 
     // purchasing.purchase is accepted too: posting a GRN only requires that

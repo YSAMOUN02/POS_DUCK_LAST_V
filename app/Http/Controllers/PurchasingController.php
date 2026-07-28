@@ -153,12 +153,30 @@ class PurchasingController extends Controller
         if ($no === '') return response()->json(['error' => 'Missing document no'], 422);
 
         $doc = PurchaseHeader::with([
-            'vendor:id,name,phone1,contact_person',
+            'vendor:id,name,phone1,phone2,email,address1,address2,contact_person',
             'lines:id,document_no,product_id,item_code,barcode,name,variant,description,quantity,unit,lot,expire_date,category_name,unit_cost,line_amount,remark',
         ])->where('no', $no)->first();
 
         if (!$doc) return response()->json(['error' => 'Document not found'], 404);
+
+        // The shop profile travels WITH the document rather than being read from
+        // a page-level JS global. That global lives in the layout HTML, which is
+        // not cache-busted — a browser holding an older copy of the page printed
+        // "Your Company" no matter how many times the profile was fixed
+        // server-side. Fetched fresh here, it cannot go stale.
+        $doc->shop = self::shopProfileForPrint();
+
         return response()->json($doc);
+    }
+
+    /** Print letterhead for whoever is signed in, falling back to the house profile. */
+    public static function shopProfileForPrint(): array
+    {
+        $profile = PosProfile::forUser(Auth::id());
+        $shop = $profile ? $profile->toArray() : [];
+        $shop['logo_url'] = PosProfileController::logoUrl();
+
+        return $shop;
     }
     public function fetchPurchaseLines(Request $request)
     {
@@ -187,7 +205,7 @@ class PurchasingController extends Controller
               || $request->filled('doc_filter');
 
         $query = PurchaseHeader::with([
-            'vendor:id,name,phone1,contact_person',
+            'vendor:id,name,phone1,phone2,email,address1,address2,contact_person',
             'lines' => function ($l) use ($lineFilter, $hasLineFilter) {
                 $l->select([
                     'id',
@@ -274,6 +292,9 @@ class PurchasingController extends Controller
             'current_page' => $page,
             'last_page'    => max(1, (int) ceil($total / $limit)),
             'total'        => $total,
+            // Carried so the Purchase Details modal can print without depending
+            // on the page-level JS global, which a cached page can leave stale.
+            'shop'         => self::shopProfileForPrint(),
         ]);
     }
     /* ============================================================
@@ -312,7 +333,7 @@ class PurchasingController extends Controller
             || $request->boolean('returns_only');
 
         $query = PurchaseHeader::with([
-            'vendor:id,name,phone1,contact_person',
+            'vendor:id,name,phone1,phone2,email,address1,address2,contact_person',
             'lines' => function ($l) use ($lineFilter, $hasLineFilter) {
                 $l->select([
                     'id', 'document_no', 'product_id', 'item_code', 'barcode', 'name',

@@ -117,9 +117,14 @@ class AdminController extends Controller
         $sql = Product::with(['warehouses' => function ($q) use ($warehouse_ids) {
             $q->whereIn('warehouse_id', $warehouse_ids);
         }]);
-        if (Auth::user()->role == 'admin') {
-        } else {
-            $sql->where('type', 'Product');
+        // Non-admins get sellable items only — goods AND services. The filter
+        // used to be type = 'Product', which silently hid every service from
+        // cashiers: the delivery fee simply was not on their screen, and it
+        // looked like service items "disappeared" depending on who was logged
+        // in. 'expence' stays excluded here; those belong to the expense flow,
+        // not the sales grid.
+        if (Auth::user()->role !== 'admin') {
+            $sql->whereIn('type', ['product', 'service']);
         }
         $sql->where('status', 1);
         $products =  $sql->get();

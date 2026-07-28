@@ -160,7 +160,7 @@
         border: 1px solid #dbeafe;
     }
     </style>
-    <title>POS Confirel - Login</title>
+    <title>POS System - Login</title>
 </head>
 
 <body>

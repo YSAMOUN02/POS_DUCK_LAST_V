@@ -60,8 +60,12 @@ class PurchaseCart extends Component
             ->where('user_id', Auth::id())
             ->get();
 
+        // A sale-only warehouse cannot receive goods, so it is not offered as a
+        // GRN destination even when the user is assigned to it.
         $this->warehouses = $warehouse_user
-            ->pluck('warehouse.name', 'warehouse.id')
+            ->pluck('warehouse')
+            ->filter(fn($w) => $w && in_array($w->type ?? 'both', ['both', 'purchase'], true))
+            ->pluck('name', 'id')
             ->toArray();
 
         // no default selected
@@ -119,6 +123,28 @@ class PurchaseCart extends Component
         $value = str_replace(['៛', '$', ',', ' '], '', $value);
 
         return is_numeric($value) ? (float) $value : 0;
+    }
+
+    /**
+     * Nudge a line's quantity by a whole unit, from the right-click stepper.
+     *
+     * Routed through recalcLine so the line amount is recomputed by the same
+     * code path a typed quantity uses. Unlike a sale there is no stock ceiling
+     * here — a receipt can bring in any quantity — but it still cannot go below
+     * one unit; removing a line is the remove button's job.
+     */
+    #[\Livewire\Attributes\On('set-qty')]
+    public function setQtyFromStepper($index, $qty)
+    {
+        if (! isset($this->cart[$index])) {
+            return;
+        }
+
+        // Absolute, not a delta — see the note on Cart::setQtyFromStepper.
+        $next = round((float) $qty, 2);
+        $this->cart[$index]['qty'] = $next < 0.01 ? 0.01 : $next;
+
+        $this->recalcLine($index, 'qty');
     }
 
     public function recalcLine($index, $field, $inputValue = null)

@@ -441,28 +441,38 @@ function buildKhmerInvoiceTable(header, lines) {
     const cur = header.currency_name || (f > 1 ? "៛" : "$");
     const m = (v) => invoiceMoneyKhmer(v, f);
 
-    const body = (lines || []).map((l, i) => {
-        const lineTotal = l.grand_total_amount ?? l.sub_total ?? (Number(l.quantity || 0) * Number(l.sell_price || 0));
+    const lineTotalOf = (l) =>
+        l.grand_total_amount ?? l.sub_total ?? (Number(l.quantity || 0) * Number(l.sell_price || 0));
 
-        // services carry no qty/unit/price — production merges those cells
-        if ((l.type ?? "product") === "service") {
-            return `
-                <tr>
-                    <td colspan="5" style="text-align:end; font-weight:bold;">${l.name ?? ""}</td>
-                    <td style="text-align:right; font-weight:bold;">${m(lineTotal)}</td>
-                </tr>`;
-        }
+    const isService = (l) => (l.type ?? "product") === "service";
 
-        return `
+    // Services (delivery fee and the like) are charges, not stock. They are kept
+    // out of the numbered goods entirely and printed BELOW the Sub Total, so the
+    // column reads: goods subtotal, then each charge, then the grand total.
+    // Splitting also keeps the No. column sequential — the old code numbered by
+    // array index, so a service between two products made the goods read 1, 3.
+    const all = lines || [];
+    const goods = all.filter((l) => !isService(l));
+    const services = all.filter(isService);
+
+    const body = goods.map((l, i) => `
             <tr>
                 <td style="text-align:center;">${i + 1}</td>
                 <td style="text-align:start">${l.name ?? ""}</td>
                 <td style="text-align:center">${l.unit ?? ""}</td>
                 <td style="text-align:center;">${formatQtyA4(l.quantity)}</td>
                 <td style="text-align:right;">${m(l.sell_price)}</td>
-                <td style="text-align:right;">${m(lineTotal)}</td>
-            </tr>`;
-    }).join("");
+                <td style="text-align:right;">${m(lineTotalOf(l))}</td>
+            </tr>`).join("");
+
+    // Merged cells, matching production: a service carries no unit/qty/price.
+    const serviceRows = services.map((l) => `
+                <tr>
+                    <td colspan="5" style="text-align:end; font-weight:bold;">${l.name ?? ""}</td>
+                    <td style="text-align:right; font-weight:bold;">${m(lineTotalOf(l))}</td>
+                </tr>`).join("");
+
+    const servicesTotal = services.reduce((sum, l) => sum + Number(lineTotalOf(l) || 0), 0);
 
     const totalRow = (labelKh, value) => `
         <tr class="total_print">
@@ -510,20 +520,25 @@ function buildKhmerInvoiceTable(header, lines) {
             <table style="width:100%; border-collapse:collapse;">
                 <thead>
                     <tr>
-                        <!-- max-width=5% (not :) is production's markup verbatim.
-                             It is invalid CSS and therefore ignored, which is what
-                             leaves the No. column auto-sized on the client's copy. -->
-                        <th style="max-width=5%;">ល.រ</th>
-                        <th>រាយមុខទំនិញ</th>
-                        <th>ឯកតា</th>
-                        <th>ចំនួន</th>
-                        <th>តម្លៃ</th>
-                        <th>តម្លៃសរុប</th>
+                        <!-- The stylesheet sets table-layout:fixed, so without
+                             explicit widths all six columns split evenly: the No.
+                             column got as much room as the item name, and long
+                             names like "ថ្លៃដឹកជញ្ជូន/Delivery Fee" wrapped.
+                             Widths are sized to content and total 100%.
+                             (This replaces production's "max-width=5%", which was
+                             a typo — "=" not ":" — and so did nothing at all.) -->
+                        <th style="width:5%;">ល.រ</th>
+                        <th style="width:42%;">រាយមុខទំនិញ</th>
+                        <th style="width:9%;">ឯកតា</th>
+                        <th style="width:9%;">ចំនួន</th>
+                        <th style="width:16%;">តម្លៃ</th>
+                        <th style="width:19%;">តម្លៃសរុប</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${body}
-                    ${totalRow("សរុប/Sub Total", subTotal)}
+                    ${totalRow("សរុប/Sub Total", subTotal - servicesTotal)}
+                    ${serviceRows}
                     ${deductionRows}
                     ${settlementRows}
                 </tbody>
@@ -843,6 +858,19 @@ function buildA4PurchaseItemsTable(lines, factor) {
 // =====================================================
 async function printPurchaseOrderA4(purchase, posInfo) {
     purchase = purchase || {};
+
+    // Prefer the profile the SERVER attached to this document. The page-level
+    // pos_profile_for_print lives in layout HTML that is not cache-busted, so a
+    // browser holding an older copy of the page supplied an empty profile and
+    // the letterhead printed "Your Company". purchase.shop is fetched with the
+    // document itself and cannot be stale.
+    const shop =
+        (purchase.shop && purchase.shop.company ? purchase.shop : null) ??
+        (posInfo && posInfo.company ? posInfo : null) ??
+        purchase.shop ??
+        posInfo ??
+        null;
+
     const factor = Number(purchase.factor ?? 1);
     const currencyName = purchase.currency_name ?? "$";
 
@@ -853,7 +881,11 @@ async function printPurchaseOrderA4(purchase, posInfo) {
     const html = `
         ${style_a4_document}
         <div class="a4-page">
-            ${buildA4Letterhead(posInfo, "Purchase Order", "PO No", purchase.no, [
+            ${buildA4Letterhead(shop, "Purchase Order", "PO No", purchase.no, [
+                // Which warehouse the goods were received into — the same receipt
+                // posted to a different site is a different document in practice,
+                // so it belongs on the header rather than only in the ledger.
+                { label: "Warehouse", value: purchase.location_name || "-" },
                 { label: "Created By", value: purchase.created_by || "-" },
             ])}
 
@@ -863,11 +895,14 @@ async function printPurchaseOrderA4(purchase, posInfo) {
             <table class="a4-items">
                 <thead>
                     <tr>
-                        <th style="width:6%;">No.</th>
-                        <th style="width:38%;">Item</th>
-                        <th style="width:12%;">Unit</th>
-                        <th style="width:14%;">Quantity</th>
-                        <th style="width:14%;">Unit Cost</th>
+                        <!-- Sized to content, totalling 100%: the item name needs
+                             the room, No. and Unit hold two or three characters,
+                             and the money columns carry six-digit riel figures. -->
+                        <th style="width:5%;">No.</th>
+                        <th style="width:45%;">Item</th>
+                        <th style="width:9%;">Unit</th>
+                        <th style="width:10%;">Quantity</th>
+                        <th style="width:15%;">Unit Cost</th>
                         <th style="width:16%;">Total</th>
                     </tr>
                 </thead>

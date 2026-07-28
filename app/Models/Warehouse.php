@@ -7,8 +7,21 @@ use Illuminate\Database\Eloquent\Model;
 class Warehouse extends Model
 {
     protected $table = 'warehouses';
-    protected $fillable = ['name', 'location', 'status', 'note', 'created_by'];
+    protected $fillable = ['name', 'location', 'type', 'status', 'note', 'created_by'];
     protected $casts = ['status' => 'boolean'];
+
+    /**
+     * Warehouses usable on one side of the business.
+     *
+     * 'both' always qualifies — a warehouse is only excluded when it has been
+     * deliberately narrowed to the other side, so existing setups are unaffected.
+     *
+     * @param  string  $side  'sale' or 'purchase'
+     */
+    public function scopeUsableFor($query, string $side)
+    {
+        return $query->whereIn('type', ['both', $side]);
+    }
 
    public function products()
 {

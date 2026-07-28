@@ -22,17 +22,18 @@
                             class="h-full pl-4 pr-8 text-sm font-medium text-gray-600 bg-gray-50
                                    border-0 border-r border-gray-200 rounded-none
                                    focus:ring-0 focus:outline-none cursor-pointer hover:bg-gray-100 transition">
-                            <option value="bar_code" selected>Barcode</option>
-                            <option value="code">Code</option>
-                            <option value="name">Name</option>
-                            <option value="description">Description</option>
+                            <option value="bar_code" selected>{{ __('Barcode') }}</option>
+                            <option value="code">{{ __('Code') }}</option>
+                            <option value="name">{{ __('Name') }}</option>
+                            <option value="description">{{ __('Description') }}</option>
                         </select>
 
                         <!-- Input -->
                         <div class="relative flex items-center">
                             <i
                                 class="fa-solid fa-magnifying-glass absolute left-3 text-gray-400 text-sm pointer-events-none"></i>
-                            <input type="text" id="search-dropdown" placeholder="Scan or search..." autocomplete="off"
+                            <input type="text" id="search-dropdown" placeholder="{{ __('Scan or search...') }}"
+                                autocomplete="off"
                                 class="h-full w-56 lg:w-64 pl-9 pr-3 text-sm border-0
                                        focus:ring-0 focus:outline-none placeholder:text-gray-400">
                         </div>
@@ -2050,6 +2051,7 @@
                                     <tr class="text-nowrap">
                                         <th class="px-3 py-3 font-bold">{{ __('Name') }}</th>
                                         <th class="px-3 py-3 font-bold">{{ __('Location') }}</th>
+                                        <th class="px-3 py-3 font-bold">{{ __('Usage') }}</th>
                                         @if (Auth::user()->role == 'admin')
                                             <th class="px-3 py-3 font-bold">{{ __('Note') }}</th>
                                         @endif
@@ -2104,6 +2106,22 @@
                         <label class="text-sm font-semibold text-gray-600 mb-1 block">Location</label>
                         <input type="text" id="warehouse_form_location" placeholder="Location"
                             class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100">
+                    </div>
+
+                    {{-- Restricts which side of the business may use this
+                         warehouse. "Both" is the default so nothing is narrowed
+                         by accident. --}}
+                    <div>
+                        <label class="text-sm font-semibold text-gray-600 mb-1 block">{{ __('Usage') }}</label>
+                        <select id="warehouse_form_type"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:border-sky-500 focus:ring-2 focus:ring-sky-100">
+                            <option value="both">{{ __('Sale & Purchase') }}</option>
+                            <option value="sale">{{ __('Sale only') }}</option>
+                            <option value="purchase">{{ __('Purchase only') }}</option>
+                        </select>
+                        <p class="mt-1 text-xs text-gray-400">
+                            {{ __('Sale only cannot receive stock; Purchase only cannot be sold from.') }}
+                        </p>
                     </div>
 
                     @if (Auth::user()->role == 'admin')
@@ -4986,26 +5004,9 @@
                 </div>
 
                 <div class="flex flex-wrap items-center gap-2">
-                    {{-- Moved off the sale order list, which keeps only Print
-                         Invoice. These act on the order shown in this modal. --}}
-                    <button type="button" onclick="printSelectedSaleOrderDeliveryNote()"
-                        class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-700 hover:from-teal-700 hover:to-emerald-800 text-white px-4 py-2 text-sm font-semibold shadow-md transition active:scale-95">
-                        <i class="fa-solid fa-truck-fast"></i>
-                        Delivery Note
-                    </button>
-
-                    <button type="button" onclick="printSelectedSaleOrderReceipt()"
-                        class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white px-4 py-2 text-sm font-semibold shadow-md transition active:scale-95">
-                        <i class="fa-solid fa-receipt"></i>
-                        Receipt
-                    </button>
-
-                    <button type="button" onclick="printSelectedSaleOrderPickingList()"
-                        class="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-700 hover:from-indigo-700 hover:to-violet-800 text-white px-4 py-2 text-sm font-semibold shadow-md transition active:scale-95">
-                        <i class="fa-solid fa-boxes-packing"></i>
-                        Picking List
-                    </button>
-
+                    {{-- Delivery Note / Receipt / Picking List used to sit here as
+                         separate buttons. They live in the Print menu at the foot
+                         of this modal instead, so there is one place to print from. --}}
                     <button type="button" id="btn-toggle-sale-currency" onclick="toggleSaleOrderCurrency()"
                         class="inline-flex items-center gap-2 rounded-xl bg-white/10 hover:bg-white/20 text-white px-4 py-2 text-sm font-semibold transition">
                         <i class="fa-solid fa-money-bill-transfer"></i>
@@ -5176,6 +5177,10 @@
                             class="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-100 transition">
                             <i class="fa-solid fa-receipt text-slate-400 w-4"></i> Receipt
                         </button>
+                        <button type="button" onclick="closePrintMenus(); printSaleOrderDataAs('picking')"
+                            class="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-100 transition">
+                            <i class="fa-solid fa-boxes-packing text-slate-400 w-4"></i> Picking List
+                        </button>
                         <button type="button" onclick="closePrintMenus(); printSaleOrderDataAs('table')"
                             class="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-100 transition border-t border-slate-100">
                             <i class="fa-solid fa-table text-slate-400 w-4"></i> Entire Table
@@ -5341,12 +5346,31 @@
 
             {{-- Footer --}}
             <div class="flex justify-between gap-3 border-t bg-white px-6 py-4">
-                <div class="flex">
+                <div class="flex gap-2">
 
+                    {{-- Preview needs only quotation.view: showing a customer the
+                         figures is not the same as issuing the document. --}}
+                    @if (Auth::user()->hasPermission('quotation.view'))
+                        <button id="btn-preview-quotation" type="button" onclick="previewQuotation()"
+                            class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-medium rounded-xl shadow-md transition flex items-center gap-2">
+                            <i class="fa-solid fa-eye"></i>
+                            <span>{{ __('Preview') }}</span>
+                        </button>
+                    @endif
+
+                    {{-- Saving is gated on quotation.create. Rendered disabled rather
+                         than hidden so it is obvious the action exists but is not
+                         yours — the server re-checks in saveQuotation regardless. --}}
+                    @php($canSaveQuotation = Auth::user()->hasPermission('quotation.create') || Auth::user()->hasPermission('quotation.edit'))
                     <button id="btn-save-quotation" onclick="submitQuotation()"
-                        class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-medium rounded-xl shadow-md transition flex items-center gap-2">
+                        @disabled(!$canSaveQuotation)
+                        title="{{ $canSaveQuotation ? '' : __('You do not have permission to save quotations') }}"
+                        class="px-4 py-2 font-medium rounded-xl shadow-md transition flex items-center gap-2
+                            {{ $canSaveQuotation
+                                ? 'bg-teal-600 hover:bg-teal-700 text-white'
+                                : 'bg-gray-300 text-gray-500 cursor-not-allowed' }}">
                         <i class="fa-solid fa-floppy-disk"></i>
-                        <span id="quotation-save-label">Save Quotation</span>
+                        <span id="quotation-save-label">{{ __('Save Quotation') }}</span>
                     </button>
                 </div>
 

@@ -20,7 +20,9 @@ class WarehouseController extends Controller
     {
         $isManager = in_array(Auth::user()->role, ['admin', 'supervisor']);
 
-        $query = Warehouse::select('id', 'name', 'location', 'status', 'created_by')
+        // 'type' must be selected or the edit form has nothing to preselect and
+        // would silently reset a restricted warehouse back to "both" on save.
+        $query = Warehouse::select('id', 'name', 'location', 'type', 'status', 'created_by')
             ->withSum('products as total_stock', 'warehouse_product.quantity');
 
         if (Auth::user()->role == 'admin') {
@@ -40,11 +42,15 @@ class WarehouseController extends Controller
         $request->validate([
             'name' => 'required|string|max:255',
             'location' => 'nullable|string|max:255',
+            'type' => 'nullable|in:both,sale,purchase',
         ]);
 
         $data = [
             'name' => $request->name,
             'location' => $request->location,
+            // Defaults to 'both' so a warehouse is unrestricted unless someone
+            // deliberately narrows it to one side of the business.
+            'type' => $request->input('type', 'both'),
             'status' => 1,
             'created_by' => Auth::user()->name,
         ];
@@ -68,6 +74,7 @@ class WarehouseController extends Controller
         $request->validate([
             'name' => 'required|string|max:255',
             'location' => 'nullable|string|max:255',
+            'type' => 'nullable|in:both,sale,purchase',
         ]);
 
         try {
@@ -76,6 +83,9 @@ class WarehouseController extends Controller
             $data = [
                 'name' => $request->name,
                 'location' => $request->location,
+                // Left as-is when the form does not send it, so an older client
+                // cannot silently widen a restricted warehouse back to 'both'.
+                'type' => $request->input('type', $warehouse->type ?? 'both'),
             ];
 
             if (Auth::user()->role == 'admin') {

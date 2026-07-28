@@ -847,13 +847,6 @@ async function print_document_v2(document_type, header, posInfo, lines = null) {
         rawTableHtml = tableEl.innerHTML;
     }
 
-    // QR code
-    let qrHtml = "";
-    try {
-        const qrData = await prepareThermalImage("/assets/logo/qr_code.png", 150, 138);
-        qrHtml = `<img src="${qrData}" style="width:150px; image-rendering:pixelated;">`;
-    } catch (e) { /* QR missing, print without it */ }
-
 
     let logoHtml = "";
     try {
@@ -989,7 +982,6 @@ async function print_document_v2(document_type, header, posInfo, lines = null) {
 
 
           <div class="v2-thanksrow">
-            ${qrHtml ? `<div class="v2-qr">${qrHtml}</div>` : ""}
             <div class="v2-thanks">
                 <div class="v2-thanks-script">Thank you!</div>
                 <div class="v2-thanks-sub">We appreciate your business.</div>
@@ -1148,8 +1140,9 @@ let style_thermal_v2 = `
     .v2-thanks { text-align:center; margin-top:14px; }
     .v2-thanks-script { font-size:26px; font-weight:800; font-style:italic; }
     .v2-thanks-sub { font-size:13px; font-weight:700; }
-   .v2-thanksrow { display:flex; align-items:center; margin-top:14px; }
-    .v2-qr { flex:0 0 auto; }
+   /* The QR code was removed, so this row holds only the thank-you block —
+      centred rather than sharing the width with an image. */
+   .v2-thanksrow { display:flex; align-items:center; justify-content:center; margin-top:14px; }
     .v2-thanks { flex:1; text-align:center; }
 
     /* footer, plain rule instead of a black fill bar */

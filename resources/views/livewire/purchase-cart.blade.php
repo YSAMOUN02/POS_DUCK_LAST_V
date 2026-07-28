@@ -11,8 +11,21 @@
 
 
             </h1>
-            <div class="px-4" id="refreshBtn" data-popover-target="popover-user-profile">
-                <i id="refresh-icon" class="fa-solid fa-arrows-rotate"></i>
+            <div class="flex items-center gap-3">
+                {{-- Same opt-in drag mode as the POS cart; drag_to_cart.js binds
+                     to #dragToCartToggle and the shared .add-to-cart-btn cards. --}}
+                <label class="flex items-center gap-1.5 cursor-pointer select-none"
+                    title="{{ __('Drag items to cart') }}">
+                    <i class="fa-solid fa-hand-pointer text-slate-500"></i>
+                    <span class="cd-switch">
+                        <input type="checkbox" id="dragToCartToggle">
+                        <span class="cd-track"><span class="cd-knob"></span></span>
+                    </span>
+                </label>
+
+                <div class="px-4" id="refreshBtn" data-popover-target="popover-user-profile">
+                    <i id="refresh-icon" class="fa-solid fa-arrows-rotate"></i>
+                </div>
             </div>
 
             <div data-popover id="popover-user-profile" role="tooltip"
@@ -390,7 +403,11 @@ foreach ($cart as $__it) {
             </style>
             @forelse ($cart as $item)
                 <div class="w-full mx-auto animate-add mt-1">
-                    <div class="ci-card">
+                    {{-- data-* drive the right-click quantity stepper (qty_stepper.js),
+                         shared with the sales cart. --}}
+                    <div class="ci-card" data-cart-index="{{ $loop->index }}"
+                        data-cart-name="{{ $item['name'] ?? '' }}" data-cart-qty="{{ $item['qty'] ?? 0 }}"
+                        data-cart-locked="0">
 
                         {{-- ===== Header (clickable) ===== --}}
                         <div class="ci-header" wire:click="toggleItem({{ $loop->index }})">

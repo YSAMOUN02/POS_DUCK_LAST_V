@@ -1479,57 +1479,88 @@
         <div class="w-11/12 max-w-6xl max-h-[92vh] modal-card-purchase">
 
             <div class="modal-header-purchase">
-                <h2 class="text-xl font-bold text-white">Purchase Details</h2>
+                <h2 class="text-xl font-bold text-white">{{ __('Purchase Details') }}</h2>
 
-                <button onclick="closePurchaseLineModal()"
-                    class="modal-close-btn">
-                    &times;
-                </button>
+                <div class="flex items-center gap-3">
+                    {{-- Mirrors the sale order detail's toggle. Hidden by
+                         renderPurchaseLineModal() when the document was saved in
+                         dollars, since there is no second currency to show. --}}
+                    {{-- Hidden via an inline style, not the `hidden` class: both
+                         it and `inline-flex` set display, and which wins depends
+                         on Tailwind's output order rather than the attribute. --}}
+                    <button type="button" id="btn-toggle-purchase-currency" onclick="togglePurchaseCurrency()"
+                        style="display:none"
+                        class="inline-flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20">
+                        <i class="fa-solid fa-money-bill-transfer"></i>
+                        <span id="purchase-currency-toggle-label">View in ៛</span>
+                    </button>
+
+                    <button type="button" onclick="closePurchaseLineModal()" class="modal-close-btn">
+                        &times;
+                    </button>
+                </div>
             </div>
 
             <div class="p-6 overflow-y-auto max-h-[75vh] space-y-5">
 
-                <div class="bg-white border rounded-xl p-6 space-y-6">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h3 id="purchase-no" class="text-xl font-bold text-gray-800">-</h3>
-                            <p class="text-sm text-gray-400">
-                                Created by <span id="purchase-created-by">-</span> •
+                {{-- Summary card: document identity on the left, the facts that
+                     distinguish one receipt from another on the right. --}}
+                <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                    <div
+                        class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 bg-slate-50 px-6 py-4">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                                <span
+                                    class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                                    <i class="fa-solid fa-file-invoice"></i>
+                                </span>
+                                <h3 id="purchase-no" class="text-xl font-bold text-slate-800 truncate">-</h3>
+                            </div>
+                            <p class="mt-1 text-sm text-slate-500">
+                                {{ __('Created by') }} <span id="purchase-created-by"
+                                    class="font-medium text-slate-700">-</span>
+                                <span class="mx-1 text-slate-300">•</span>
                                 <span id="purchase-posting-date">-</span>
                             </p>
                         </div>
 
-                        <div class="flex items-center gap-4 flex-wrap">
-
-                            <div class="flex items-center gap-2">
-
-                            </div>
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span
+                                class="inline-flex items-center gap-1.5 rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-800">
+                                <i class="fa-solid fa-warehouse"></i>
+                                <span id="purchase-warehouse">-</span>
+                            </span>
+                            <span
+                                class="inline-flex items-center gap-1.5 rounded-full bg-violet-100 px-3 py-1 text-xs font-semibold text-violet-800">
+                                <i class="fa-solid fa-money-bill-transfer"></i>
+                                <span id="purchase-currency">-</span>
+                            </span>
                         </div>
                     </div>
 
-                    <div class="grid md:grid-cols-2 gap-6">
-                        <div class="space-y-4">
-                            <div>
-                                <p class="text-xs text-gray-400 uppercase">Vendor</p>
-                                <p id="purchase-vendor" class="font-medium text-gray-800">-</p>
-                            </div>
-
-                            <div>
-                                <p class="text-xs text-gray-400 uppercase">Vendor ID</p>
-                                <p id="purchase-vendor-id" class="font-medium text-gray-800">-</p>
-                            </div>
+                    <div class="grid gap-x-6 gap-y-4 px-6 py-5 sm:grid-cols-2 lg:grid-cols-4">
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">{{ __('Vendor') }}
+                            </p>
+                            <p id="purchase-vendor" class="mt-0.5 font-medium text-slate-800 break-words">-</p>
                         </div>
-
-                        <div class="space-y-4">
-
-                            <div>
-                                <p class="text-xs text-gray-400 uppercase">Remark</p>
-                                <p id="purchase-remark" class="font-medium text-gray-800">-</p>
-                            </div>
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">{{ __('Vendor ID') }}
+                            </p>
+                            <p id="purchase-vendor-id" class="mt-0.5 font-medium text-slate-800">-</p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                                {{ __('Payment Method') }}</p>
+                            <p id="purchase-payment-method" class="mt-0.5 font-medium text-slate-800">-</p>
+                        </div>
+                        <div>
+                            <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">{{ __('Remark') }}
+                            </p>
+                            <p id="purchase-remark" class="mt-0.5 font-medium text-slate-800 break-words">-</p>
                         </div>
                     </div>
                 </div>
-                <br>
                 <div class="border rounded-xl overflow-hidden">
                     <div class="px-5 py-3 bg-gray-50 border-b flex justify-between items-center">
                         <h3 class="font-semibold text-gray-800">Purchase Lines</h3>
@@ -1562,42 +1593,52 @@
                         </table>
                     </div>
                 </div>
-                <br>
                 <div class="flex justify-end">
-                    <div class="w-full md:w-96 border rounded-xl p-5 bg-gray-50 space-y-2 text-sm">
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Total Qty</span>
-                            <span id="purchase-total-qty" class="font-semibold">0</span>
+                    <div class="w-full md:w-96 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                        <div class="space-y-2 px-5 py-4 text-sm">
+                            <div class="flex justify-between">
+                                <span class="text-slate-500">{{ __('Total Qty') }}</span>
+                                <span id="purchase-total-qty" class="font-semibold text-slate-800">0</span>
+                            </div>
+                            <div class="flex justify-between">
+                                <span class="text-slate-500">{{ __('Lines') }}</span>
+                                <span id="purchase-total-lines" class="font-semibold text-slate-800">0</span>
+                            </div>
                         </div>
-
-
-
-                        <hr>
-
-                        <div class="flex justify-between text-lg font-bold text-gray-800">
-                            <span>Grand Total</span>
-                            <span id="purchase-grand-total">$0.00</span>
+                        <div
+                            class="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-5 py-4 text-lg font-bold text-slate-800">
+                            <span>{{ __('Grand Total') }}</span>
+                            <span id="purchase-grand-total" class="text-emerald-700">$0.00</span>
                         </div>
                     </div>
                 </div>
             </div>
 
             <div class="flex flex-wrap justify-between gap-3 px-6 py-4 border-t bg-gray-50">
-                <button onclick="closePurchaseLineModal()"
-                    class="px-4 py-2 bg-gray-500 hover:bg-gray-600 text-white font-medium rounded-xl shadow-md transition">
-                    Close
+                <button type="button" onclick="closePurchaseLineModal()"
+                    class="rounded-xl border border-slate-300 px-5 py-2 font-medium text-slate-600 transition hover:bg-slate-100">
+                    {{ __('Close') }}
                 </button>
 
-                @if (Auth::user()->hasPermission('purchasing.purchase_return'))
-                    <button id="btn-open-return" onclick="openReturnModal()"
-                        class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-medium rounded-xl shadow-md transition flex items-center gap-2">
-                        <i class="fa-solid fa-rotate-left"></i>
-                        Create Purchase Return
+                {{-- Return and Print grouped on the right: Close is the way out,
+                     these two act on the document. --}}
+                <div class="flex flex-wrap items-center gap-3">
+                    @if (Auth::user()->hasPermission('purchasing.purchase_return'))
+                        <button type="button" id="btn-open-return" onclick="openReturnModal()"
+                            class="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2 font-medium text-white shadow-md transition hover:bg-rose-700 active:scale-95">
+                            <i class="fa-solid fa-rotate-left"></i>
+                            {{ __('Create Purchase Return') }}
+                        </button>
+                    @endif
+
+                    {{-- Was an unstyled bare <button>, so it rendered as a plain
+                         grey browser control in the middle of the footer. --}}
+                    <button type="button" onclick="printPurchase()"
+                        class="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-5 py-2 font-medium text-white shadow-md transition hover:bg-slate-900 active:scale-95">
+                        <i class="fa-solid fa-print"></i>
+                        {{ __('Print') }}
                     </button>
-                @endif
-                <button onclick='printPurchase()'>
-                    Print
-                </button>
+                </div>
             </div>
         </div>
     </div>
