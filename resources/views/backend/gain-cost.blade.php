@@ -39,8 +39,6 @@
                             <button class="btn primary" id="btnExport">Export ▾</button>
                             <div class="exp-menu" id="expMenu" hidden>
                                 <button data-export="excel">Excel workbook (.xlsx)</button>
-                                <button data-export="summary">Summary (KPIs · CSV)</button>
-                                <button data-export="table">Current table (CSV)</button>
                                 <button data-export="print">Full report (PDF)</button>
                             </div>
                         </div>
@@ -216,6 +214,14 @@
                 </footer>
             </div>
 
+            <!-- HTML comment, not Blade: this whole file sits inside @verbatim,
+                 so {{-- --}} would print on the page instead of being stripped.
+                 Drill-down modal, filled by renderModal() when a KPI card,
+                 chart point or table row is clicked. -->
+
+            <div class="gc-ov" id="modalOv" hidden>
+                <div class="gc-modal" id="modalBox"></div>
+            </div>
             <div class="gc-toast" id="toast" hidden></div>
         </div>
 
@@ -543,15 +549,16 @@
                             window.location = API + '/export-excel?' + qs();
                             return;
                         }
-                        window.location = API + '/export?' + qs(k === 'summary' ? {
-                            kind: 'summary'
-                        } : {
-                            kind: 'table',
-                            tab: state.tab
-                        });
                     });
                     document.addEventListener('click', e => {
                         if (!e.target.closest('.exp-wrap')) $('expMenu').hidden = true;
+                    });
+                    // Dismiss the drill-down modal: click the backdrop, or Escape.
+                    $('modalOv').onclick = e => {
+                        if (e.target.id === 'modalOv') closeModal();
+                    };
+                    document.addEventListener('keydown', e => {
+                        if (e.key === 'Escape') closeModal();
                     });
 
                     reloadAll();
@@ -1718,14 +1725,120 @@
                     state.page = page;
                 }
 
-                /* ---------------- detail modal (content rendered inside the modal) ---------------- */
-                // The click-through breakdown modal was removed — it was hard to
-                // read and the Excel / CSV exports cover the same ground better.
-                // Kept as an inert stub because roughly fifteen chart and table
-                // handlers still call it; they now do nothing rather than throw.
-                function openDetail() {}
+                /* ---------------- detail modal (content rendered inside the modal) ----------------
+                   Drill-down for KPI cards, chart points/bars, product rows and
+                   the expense legend — about fifteen call sites. The standalone
+                   "Transaction Detail" explorer section that also used this modal
+                   was removed; the modal itself stays, because the click-through
+                   from the charts and cards is a separate feature. */
+                function openDetail(type, id, extra) {
+                    get('/detail', Object.assign({
+                        type,
+                        id
+                    }, extra || {})).then(m => {
+                        if (m) m._di = id; // remember id for the pager
+                        renderModal(m);
+                    }).catch(() => {});
+                }
 
-                function closeModal() {}
+                function closeModal() {
+                    $('modalOv').hidden = true;
+                    $('modalBox').innerHTML = '';
+                }
+
+                function renderModal(m) {
+                    if (!m || m.error) {
+                        return;
+                    }
+                    const accent = COLOR[m.accent] || COLOR.profit;
+                    const buildPnl = () => {
+                        if (!m.pnl) return '';
+                        const row = (r) => {
+                            const v = +r.v || 0;
+                            const sign = v < 0 ? 'neg' : (v > 0 ? 'pos' : '');
+                            const cls = 'pnl-row' + (r.strong ? ' strong' : '') + (r.rule ? ' rule' : '');
+                            return '<div class="' + cls + '"><span class="pnl-l">' + esc(r.l) +
+                                '</span><span class="pnl-v ' + sign + '">' + money2(v) + '</span></div>';
+                        };
+                        return '<div class="pnl-card">' + m.pnl.map(row).join('') + '</div>';
+                    };
+                    let h = '<div class="m-head" style="--accent:' + accent + '"><div><div class="m-eyebrow">' + esc(m
+                            .eyebrow || '') + '</div>' +
+                        '<h3 class="m-title">' + esc(m.title || '') + '</h3><div class="m-tags">' + (m.tags || []).map(t =>
+                            '<span class="m-tag">' + esc(t) + '</span>').join('') + '</div></div>' +
+                        '<button class="m-close" id="mClose">' + ic('x') + '</button></div>';
+
+                    if (m.meta && m.meta.length)
+                        h += '<div class="m-meta">' + m.meta.map(x => '<div class="meta-i"><span class="meta-l">' + esc(x[
+                            0]) + '</span><span class="meta-v">' + esc(x[1]) + '</span></div>').join('') + '</div>';
+
+                    if (m.kpis && m.kpis.length)
+                        h += '<div class="m-kpis">' + m.kpis.map(k => '<div class="m-kpi" style="--accent:' + (COLOR[k[
+                                2]] || COLOR.profit) + '"><span class="m-kpi-l">' + esc(k[0]) +
+                            '</span><span class="m-kpi-v">' + esc(fmtKpi(k[1], k[3])) + '</span></div>').join('') +
+                        '</div>';
+                    if (m.pnl) {
+                        h += buildPnl();
+                        if (m.linesLabel) h += '<div class="m-section-label">' + esc(m.linesLabel) + '</div>';
+                    }
+                    if (m.columns && m.lines) {
+                        const heads = m.columns.map((c, i) => '<th class="' + ((NUMH[c] && i > 0) ? 'r' : '') + '">' + esc(
+                            c) + '</th>').join('');
+                        const body = m.lines.map(ln => {
+                            const cls = (ln.cls === 'ret' ? 'ret ' : '') + (ln.drill ? 'drill' : '');
+                            const tds = ln.cells.map((cell, i) => {
+                                const right = NUMH[m.columns[i]] && i > 0;
+                                if (cell && typeof cell === 'object') {
+                                    const v = cell.cls ? '<span class="' + cell.cls + '">' + esc(cell.v) +
+                                        '</span>' : esc(cell.v);
+                                    return '<td class="' + (right ? 'r' : '') + '">' + v + (cell.sub ?
+                                            '<div class="m-cell-sub">' + esc(cell.sub) + '</div>' : '') +
+                                        '</td>';
+                                }
+                                return '<td class="' + (right ? 'r' : '') + '">' + esc(cell) + '</td>';
+                            }).join('');
+                            const dr = ln.drill ? ' data-dt="' + esc(ln.drill.type) + '" data-di="' + esc(ln.drill
+                                .id) + '"' : '';
+                            return '<tr class="' + cls.trim() + '"' + dr + '>' + tds + '</tr>';
+                        }).join('');
+                        h += '<div class="m-tbl-wrap"><table class="m-tbl"><thead><tr>' + heads + '</tr></thead><tbody>' +
+                            body + '</tbody></table></div>';
+                    }
+
+                    if (m.totals && m.totals.length)
+                        h += '<div class="m-totals">' + m.totals.map(t => {
+                            const v = +t[1] || 0;
+                            const sign = v < 0 ? 'neg' : (v > 0 ? 'pos' : '');
+                            return '<div class="trow ' + (t[2] ? 'strong' : '') + '" style="--accent:' + accent +
+                                '"><span>' + esc(t[0]) + '</span><span class="num ' + sign + '">' + money2(v) + '</span></div>';
+                        }).join('') + '</div>';
+
+                    if (m.note) h += '<div class="m-note">' + esc(m.note).replace(/\n/g, '<br>') + '</div>';
+                    if (m.pages && m.pages > 1 && m.drillType) {
+                        const pg = m.page || 1,
+                            pgs = m.pages;
+                        h += '<div class="m-pager">' +
+                            '<button class="m-pg-btn" data-pg="' + (pg - 1) + '"' + (pg <= 1 ? ' disabled' : '') + '>' + ic(
+                                'chevL') + '</button>' +
+                            '<span class="m-pg-num">' + pg + ' / ' + pgs + ' · ' + num(m.total || 0) + ' rows</span>' +
+                            '<button class="m-pg-btn" data-pg="' + (pg + 1) + '"' + (pg >= pgs ? ' disabled' : '') + '>' +
+                            ic('chevR') + '</button>' +
+                            '</div>';
+                    }
+                    const box = $('modalBox');
+                    box.style.setProperty('--accent', accent);
+                    box.innerHTML = h;
+                    $('modalOv').hidden = false;
+                    $('mClose').onclick = closeModal;
+                    box.querySelectorAll('tr.drill').forEach(tr => tr.onclick = () => openDetail(tr.dataset.dt, tr.dataset
+                        .di));
+                    box.querySelectorAll('.m-pg-btn').forEach(b => b.onclick = () => {
+                        if (b.disabled) return;
+                        openDetail(m.drillType, m._di || '', {
+                            page: b.dataset.pg
+                        });
+                    });
+                }
 
                 function fmtKpi(val, fmt) {
                     if (fmt === '%') return (+val).toFixed(1) + '%';

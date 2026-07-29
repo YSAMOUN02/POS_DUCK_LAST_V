@@ -397,11 +397,13 @@ class Cart extends Component
                     'currency_name'  => $riel->code,
                     'factor'         => $riel->factor,
 
-                    'unit_cost' => $rowUnitCost,
-                    // Cost of the goods leaving stock. The sales value of the
-                    // same line stays in net_amount / grand_total_amount below,
-                    // so inventory value and revenue never share a column.
-                    'cost_amount' => round(abs($rowQty) * abs($rowUnitCost), 6),
+                    // unit_cost stays positive; cost_amount is the signed
+                    // inventory movement, negative here because the goods are
+                    // leaving stock. The sales value of the same line stays in
+                    // net_amount / grand_total_amount below, so inventory value
+                    // and revenue never share a column.
+                    'unit_cost' => abs($rowUnitCost),
+                    'cost_amount' => -round(abs($rowQty) * abs($rowUnitCost), 6),
                     'unit_price' => $unitPrice,
                     'sell_price' => $sellPrice,
 
@@ -744,6 +746,43 @@ class Cart extends Component
 
         return array_map('intval', array_keys($this->saleWarehouses))
             ?: Auth::user()->warehouses->pluck('id')->all();
+    }
+
+    /**
+     * Is this balance settled, allowing for riel that cannot express a cent?
+     *
+     * Riel is taken on a 100៛ grid, so a USD remainder worth less than half a
+     * note is physically unpayable — at 4,025៛ that is anything under $0.0124.
+     * Comparing USD directly left orders stuck on Partial showing $0.01 owed
+     * after the customer had already handed over every note they could.
+     *
+     * Judged on the same 100៛ grid the cashier sees, so the screen and the
+     * stored status agree. A genuinely owed $0.02 is 80.5៛, which rounds up to
+     * a payable 100៛ note and correctly stays outstanding.
+     */
+    private function isSettled(float $paid, float $total): bool
+    {
+        if ($paid >= $total) {
+            return true;
+        }
+
+        $rate = (float) (Currency::where('code', '៛')->value('factor') ?? 0);
+        if ($rate <= 0) {
+            return false; // no riel configured — the plain USD comparison stands
+        }
+
+        return round((($total - $paid) * $rate) / 100) * 100 <= 0;
+    }
+
+    /**
+     * Tell the POS grid to re-pull stock for the newly chosen warehouse.
+     *
+     * Without this the cards keep showing the previous warehouse's figures,
+     * which no longer describe what the sale can draw on.
+     */
+    public function updatedSaleWarehouseId($value): void
+    {
+        $this->dispatch('sale-warehouse-changed', warehouseId: $value);
     }
 
     /**
@@ -2011,9 +2050,13 @@ class Cart extends Component
                 if ($paidAmount <= 0) {
                     $paymentStatus = 'Unpaid';
                     $finalStatus = 'Deposit';
-                } elseif ($paidAmount >= $grandTotal) {   // overpay lands here → Paid / Completed
+                } elseif ($this->isSettled($paidAmount, $grandTotal)) {   // overpay lands here → Paid / Completed
                     $paymentStatus = 'Paid';
                     $finalStatus = 'Completed';
+                    // Absorb the sub-note rounding dust, so no report can
+                    // recompute a phantom cent from grand_total - paid_amount.
+                    $paidAmount = max($paidAmount, $grandTotal);
+                    $balanceAmount = 0;
                 } else {
                     $paymentStatus = 'Partial';
                     $finalStatus = 'Deposit';
@@ -2265,11 +2308,10 @@ class Cart extends Component
                             'currency_name'  => $riel->code,
                             'factor'         => $riel->factor,
 
-                            'unit_cost' => $rowUnitCost,
-                            // Cost of the goods leaving stock. The sales value
-                            // of the same line stays in net_amount /
-                            // grand_total_amount below.
-                            'cost_amount' => round(abs($rowQty) * abs($rowUnitCost), 6),
+                            // Negative — goods leaving stock. Sales value stays
+                            // in net_amount / grand_total_amount below.
+                            'unit_cost' => abs($rowUnitCost),
+                            'cost_amount' => -round(abs($rowQty) * abs($rowUnitCost), 6),
                             'unit_price' => $unitPrice,
                             'sell_price' => $sellPrice,
 
@@ -2391,9 +2433,12 @@ class Cart extends Component
                 // can bring grandTotal down to 0 (or below paidAmount) with no
                 // cash payment at all, which must still close the order out
                 // rather than falling into the "Unpaid" branch below.
-                if ($paidAmount >= $grandTotal) {
+                if ($this->isSettled($paidAmount, $grandTotal)) {
                     $paymentStatus = 'Paid';
                     $finalStatus = 'Completed';
+                    // Absorb the sub-note rounding dust, so no report can
+                    // recompute a phantom cent from grand_total - paid_amount.
+                    $paidAmount = max($paidAmount, $grandTotal);
                 } elseif ($paidAmount <= 0) {
                     $paymentStatus = 'Unpaid';
                     $finalStatus = 'Deposit';
@@ -3105,8 +3150,9 @@ class Cart extends Component
                     'remaining_quantity' => $returnQty,   // ← returned stock goes onto its own entry
                     'entry_type'         => 'positive',
 
-                    'unit_cost'          => $entry->unit_cost,
-                    // Stock coming back in is worth what it cost going out.
+                    // Positive — stock coming back in, worth what it cost going
+                    // out. Mirrors the negative cost_amount on the sale.
+                    'unit_cost'          => abs((float) $entry->unit_cost),
                     'cost_amount'        => round(abs($returnQty) * abs((float) $entry->unit_cost), 6),
                     'unit_price'         => $entry->unit_price,
                     'sell_price'         => $entry->sell_price,
@@ -3529,16 +3575,19 @@ public function stockAdjustment($payload)
                     'currency_name'      => $this->currency_name,
                     'factor'             => $this->factor,
 
-                    'unit_cost'          => $unitCost,    // same cost unit
                     // Stock adjustment is a pure inventory move — it has a cost
-                    // value and no sales value at all.
-                    'cost_amount'        => round(abs($signedQty) * abs($unitCost), 6),
+                    // value and no sales value at all. unit_cost stays positive;
+                    // cost_amount carries the direction, so writing stock up is
+                    // positive and writing it off is negative.
+                    'unit_cost'          => abs($unitCost),
+                    'cost_amount'        => $r($lineSign * abs($qty) * abs($unitCost)),
                     'unit_price'         => $r($product->sell_price ?? 0),
                     'sell_price'         => $r($product->sell_price ?? 0),
 
-                    'line_amount'        => $r($lineSign * $unitCost * $qty),
-                    'net_amount'         => $r($lineSign * $unitCost * $qty),
-                    'grand_total_amount' => $r($lineSign * $unitCost * $qty),
+                    // Sales value — not applicable to an adjustment.
+                    'line_amount'        => 0,
+                    'net_amount'         => 0,
+                    'grand_total_amount' => 0,
 
                     'vendor_id'          => $vendorId,    // supplier if found
                     'vendor_name'        => $vendorNm,

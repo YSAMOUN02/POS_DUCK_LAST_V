@@ -262,8 +262,17 @@
         // (sale, return, purchase/GRN, adjustment) no matter who made it.
         async function reloadProducts(opts = {}) {
             const silent = opts.silent === true;
+            // Stamped here so every route in — timer, tab focus, or a direct
+            // post-sale call from script.js — resets the cooldown, and the
+            // heartbeat never re-pulls seconds after a sale already did.
+            window.lastProductRefreshAt = Date.now();
             try {
-                const res = await fetch('/pos/products');
+                // Stock shown must be the stock this sale can actually draw
+                // on, so the grid follows the selected warehouse.
+                const url = window.posSaleWarehouseId
+                    ? `/pos/products?warehouse_id=${encodeURIComponent(window.posSaleWarehouseId)}`
+                    : '/pos/products';
+                const res = await fetch(url);
                 const data = await res.json();
 
                 productsByCategory = data.categories;
@@ -301,24 +310,55 @@
             }
         }
 
+        // Switching the sale's warehouse changes which stock is reachable, so
+        // the grid has to be re-pulled rather than left showing the old site's
+        // numbers. Stored on window because Livewire navigation discards
+        // script-scoped variables.
+        window.posSaleWarehouseId = window.posSaleWarehouseId || null;
+        window.addEventListener('sale-warehouse-changed', (e) => {
+            window.posSaleWarehouseId = e.detail?.warehouseId || null;
+            // Deliberate user action — must show the new warehouse's stock at
+            // once, so it bypasses the cooldown.
+            requestProductRefresh({ force: true, silent: false });
+        });
+
         // Background sync: covers stock changes from any transaction
         // (sale/return/purchase/adjustment) made by any user/terminal, and
         // exchange-rate changes made by an admin — not just this session's
         // own actions.
-        const PRODUCT_SYNC_INTERVAL_MS = 25000;
-        setInterval(() => reloadProducts({ silent: true }), PRODUCT_SYNC_INTERVAL_MS);
+        // A refresh pulls every product with its warehouse stock — by far the
+        // heaviest request the POS makes, and it was firing every 25s on every
+        // open terminal. This terminal's own sales, returns and adjustments
+        // already refresh on completion, so the timer only exists to notice
+        // OTHER terminals' changes and can be slow.
+        const PRODUCT_SYNC_INTERVAL_MS = 300000; // 5 min
 
-        // Browsers heavily throttle setInterval in background/unfocused tabs
-        // (can stretch to once a minute or more) — a "standby" terminal that
-        // isn't the active window/tab may not see the 25s poll fire on time.
-        // Refresh immediately the moment the cashier actually looks back at
-        // the screen, instead of waiting on a throttled timer.
+        // Every request goes through here. A tab switch fires visibilitychange
+        // AND focus, which used to mean two full pulls for one switch; the
+        // cooldown collapses those, and stops rapid alt-tabbing from hammering
+        // the server. User actions pass force to skip it.
+        // On window, not a script-scoped let: reloadProducts() stamps it and is
+        // also called directly from script.js after a sale, so the value has to
+        // exist before this line runs.
+        const PRODUCT_REFRESH_MIN_GAP_MS = 60000; // 1 min
+
+        function requestProductRefresh({ force = false, silent = true } = {}) {
+            const since = Date.now() - (window.lastProductRefreshAt || 0);
+            if (!force && since < PRODUCT_REFRESH_MIN_GAP_MS) return;
+            reloadProducts({ silent });
+        }
+
+        setInterval(() => requestProductRefresh(), PRODUCT_SYNC_INTERVAL_MS);
+
+        // Browsers heavily throttle setInterval in background/unfocused tabs,
+        // so a "standby" terminal may not see the timer fire on time. Coming
+        // back to the screen is the moment stale stock actually matters.
         document.addEventListener("visibilitychange", () => {
             if (document.visibilityState === "visible") {
-                reloadProducts({ silent: true });
+                requestProductRefresh();
             }
         });
-        window.addEventListener("focus", () => reloadProducts({ silent: true }));
+        window.addEventListener("focus", () => requestProductRefresh());
 
 
         // Helper: sort products by total_stock DESC
@@ -726,7 +766,9 @@
                     },
                     body: JSON.stringify({
                         field,
-                        query
+                        query,
+                        // Keep search results on the same warehouse as the grid.
+                        warehouse_id: window.posSaleWarehouseId || null
                     })
                 });
 

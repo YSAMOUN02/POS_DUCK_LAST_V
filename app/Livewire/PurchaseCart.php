@@ -405,11 +405,12 @@ class PurchaseCart extends Component
                     'currency_name'  => $riel->code,
                     'factor'         => $riel->factor,
 
-                    'unit_cost'           => $unitCost,
-                    // Goods receipt: this is what the stock is worth. The
-                    // line_amount/net_amount/grand_total_amount below still
-                    // carry the same figure negated, because GainCostController
-                    // derives purchase spend from that sign.
+                    // Goods receipt is an inventory movement, so its value lives
+                    // entirely in the cost fields. unit_cost stays positive and
+                    // cost_amount carries the sign: stock coming in is positive.
+                    // The sales fields below stay 0 — a purchase has no sales
+                    // value, and putting one there polluted revenue reporting.
+                    'unit_cost'           => abs($unitCost),
                     'cost_amount'         => round(abs($qty) * abs($unitCost), 6),
                     'sell_price'          => $product->sell_price ?? 0,
                     'unit_price'          => $unitPrice,
@@ -419,9 +420,10 @@ class PurchaseCart extends Component
                     'vat'                 => $product->vat ?? 0,
                     'vat_amount'          => 0,
 
-                    'line_amount'         => round(-1 * $lineAmount, 6),
-                    'net_amount'          => round(-1 * $lineAmount, 6),
-                    'grand_total_amount'  => round(-1 * $lineAmount, 6),
+                    // Sales value — not applicable to a purchase.
+                    'line_amount'         => 0,
+                    'net_amount'          => 0,
+                    'grand_total_amount'  => 0,
 
                     'vendor_id'           => $this->vendor_id,
                     'vendor_name'         => $vendor->name ?? '',

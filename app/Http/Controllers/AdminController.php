@@ -109,9 +109,10 @@ class AdminController extends Controller
 
 
 
-    public function getProducts()
+    public function getProducts(Request $request)
     {
-        $warehouse_ids = Auth::user()->warehouses->pluck('id');
+        // Narrowed to the sale's warehouse when the POS has one selected.
+        $warehouse_ids = Warehouse::stockScopeFor(Auth::user(), $request->query('warehouse_id'));
 
         // 1️⃣ Load products with only the selected warehouse
         $sql = Product::with(['warehouses' => function ($q) use ($warehouse_ids) {

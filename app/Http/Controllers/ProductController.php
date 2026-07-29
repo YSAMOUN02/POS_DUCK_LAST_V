@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Product;
+use App\Models\Warehouse;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -300,7 +301,8 @@ public function searchByCategory(Request $request)
         $query = trim($request->input('query', ''));
         $field = $request->input('field', 'name');
 
-        $warehouse_ids = Auth::user()->warehouses->pluck('id');
+        // Narrowed to the sale's warehouse when the POS has one selected.
+        $warehouse_ids = Warehouse::stockScopeFor(Auth::user(), $request->input('warehouse_id'));
 
         // ✅ must match the DB column AND what the frontend <select> sends
         $allowedFields = ['name', 'description', 'code', 'bar_code'];

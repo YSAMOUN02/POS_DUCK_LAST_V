@@ -251,16 +251,17 @@ class PurchaseReturnController extends Controller
                     $entry->quantity            = (-1) * $qty;                   // NEGATIVE — stock-out
                     $entry->remaining_quantity  = 0;                      // a return holds no stock
                     $entry->entry_type          = $this->negative;        // still a stock-OUT type
-                    $entry->unit_cost           = $unitCost;              // editable price
-                    // Inventory value of the stock going back to the vendor.
-                    // Always positive — the direction is carried by quantity /
-                    // entry_type, not by the sign of the value.
-                    $entry->cost_amount         = round(abs($qty) * abs((float) $unitCost), 6);
+                    // Inventory movement: the value lives in the cost fields.
+                    // unit_cost stays positive; cost_amount carries the sign,
+                    // negative here because stock is going back to the vendor.
+                    $entry->unit_cost           = abs((float) $unitCost);
+                    $entry->cost_amount         = -round(abs($qty) * abs((float) $unitCost), 6);
                     $entry->unit_price          = (float) ($h->unit_price ?? 0);
                     $entry->sell_price          = (float) ($h->sell_price ?? 0);
-                    $entry->line_amount         = $line;                  // POSITIVE — cost recovered
-                    $entry->net_amount          = $line;
-                    $entry->grand_total_amount  = $line;
+                    // Sales value — not applicable to a purchase return.
+                    $entry->line_amount         = 0;
+                    $entry->net_amount          = 0;
+                    $entry->grand_total_amount  = 0;
                     $entry->currency_name       = $s($h->currency_name);
                     $entry->factor              = $factor;
                     $entry->vendor_id           = $h->vendor_id;          // keep id (FK) as-is

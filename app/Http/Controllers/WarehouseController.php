@@ -563,6 +563,13 @@ class WarehouseController extends Controller
             // Add stock to target
             if ($targetRow) {
                 $targetRow->quantity = round((float) $targetRow->quantity + $transferQty, 6);
+                // Stock valuation reads warehouse_product.cost, so a destination
+                // row left at 0 makes transferred stock worth nothing on the
+                // Stock on Hand report. Only filled when missing — an existing
+                // cost on the lot is the one already being reported against.
+                if (!(float) $targetRow->cost) {
+                    $targetRow->cost = $unitCost;
+                }
                 // do NOT increase original_qty on transfer
                 $targetRow->save();
             } else {
@@ -572,6 +579,9 @@ class WarehouseController extends Controller
                     'bin_id'        => $destBinId,
                     'original_quantity'  => 0,
                     'quantity'           => $transferQty,
+                    // Carry the cost across: a transfer moves value, it does
+                    // not destroy it.
+                    'cost'          => $unitCost,
                     'track_lot'     => $oldTrackLot,
                     'lot'           => $oldLot,
                     'expire'        => $oldExpire,
@@ -627,10 +637,12 @@ class WarehouseController extends Controller
                 'remaining_quantity' => 0,
                 'entry_type'         => 'negative',
 
-                'unit_cost'          => $unitCost,
-                // Inventory value of this movement. Positive on both legs: the
-                // shipment and the receipt are each worth the same stock.
-                'cost_amount'        => round(abs($transferQty) * abs($unitCost), 6),
+                // Inventory movement: the value lives in the cost fields.
+                // unit_cost stays positive; cost_amount carries the direction —
+                // negative on the shipment leg, so the two legs of a transfer
+                // net to zero and cost_amount sums to real inventory movement.
+                'unit_cost'          => abs($unitCost),
+                'cost_amount'        => -round(abs($transferQty) * abs($unitCost), 6),
                 'unit_price'         => $product->sell_price ?? 0,
                 'sell_price'         => $product->sell_price ?? 0,
 
@@ -685,9 +697,8 @@ class WarehouseController extends Controller
                 'remaining_quantity' => $transferQty,
                 'entry_type'         => 'positive',
 
-                'unit_cost'          => $unitCost,
-                // Inventory value of this movement. Positive on both legs: the
-                // shipment and the receipt are each worth the same stock.
+                // Receiving leg — cost_amount positive, mirroring the shipment.
+                'unit_cost'          => abs($unitCost),
                 'cost_amount'        => round(abs($transferQty) * abs($unitCost), 6),
                 'unit_price'         => $product->sell_price ?? 0,
                 'sell_price'         => $product->sell_price ?? 0,
@@ -903,6 +914,11 @@ class WarehouseController extends Controller
 
         if ($targetRow) {
             $targetRow->quantity = round((float) $targetRow->quantity + $transferQty, 6);
+            // See the other transfer path: stock valuation reads this column,
+            // so it must not be left at 0 on the receiving side.
+            if (!(float) $targetRow->cost) {
+                $targetRow->cost = $unitCost;
+            }
             $targetRow->save();
         } else {
             $targetRow = WarehouseProduct::create([
@@ -911,6 +927,8 @@ class WarehouseController extends Controller
                 'bin_id'            => $destBinId,
                 'original_quantity' => 0,
                 'quantity'          => $transferQty,
+                // Carry the cost across: a transfer moves value, not destroys it.
+                'cost'              => $unitCost,
                 'track_lot'         => $oldTrackLot,
                 'lot'               => $oldLot,
                 'expire'            => $oldExpire,
@@ -957,10 +975,12 @@ class WarehouseController extends Controller
             'remaining_quantity' => 0,
             'entry_type'         => 'negative',
 
-            'unit_cost'          => $unitCost,
-            // Inventory value of this movement. Positive on both legs: the
-            // shipment and the receipt are each worth the same stock.
-            'cost_amount'        => round(abs($transferQty) * abs($unitCost), 6),
+            // Inventory movement: the value lives in the cost fields.
+            // unit_cost stays positive; cost_amount carries the direction —
+            // negative on the shipment leg, so the two legs of a transfer
+            // net to zero and cost_amount sums to real inventory movement.
+            'unit_cost'          => abs($unitCost),
+            'cost_amount'        => -round(abs($transferQty) * abs($unitCost), 6),
             'unit_price'         => $product->sell_price ?? 0,
             'sell_price'         => $product->sell_price ?? 0,
 
@@ -1012,9 +1032,8 @@ class WarehouseController extends Controller
             'remaining_quantity' => $transferQty,
             'entry_type'         => 'positive',
 
-            'unit_cost'          => $unitCost,
-            // Inventory value of this movement. Positive on both legs: the
-            // shipment and the receipt are each worth the same stock.
+            // Receiving leg — cost_amount positive, mirroring the shipment.
+            'unit_cost'          => abs($unitCost),
             'cost_amount'        => round(abs($transferQty) * abs($unitCost), 6),
             'unit_price'         => $product->sell_price ?? 0,
             'sell_price'         => $product->sell_price ?? 0,

@@ -15,6 +15,12 @@ use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Style\Border;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Conditional;
+use PhpOffice\PhpSpreadsheet\Chart\Chart;
+use PhpOffice\PhpSpreadsheet\Chart\DataSeries;
+use PhpOffice\PhpSpreadsheet\Chart\DataSeriesValues;
+use PhpOffice\PhpSpreadsheet\Chart\Legend as ChartLegend;
+use PhpOffice\PhpSpreadsheet\Chart\PlotArea;
+use PhpOffice\PhpSpreadsheet\Chart\Title as ChartTitle;
 use App\Models\Expense;
 use App\Models\InvoiceLine;
 
@@ -263,22 +269,29 @@ class GainCostController extends Controller
         return ($v < 0 ? '-' : '') . $this->disp['sym'] . number_format(abs($v), $this->disp['dec']);
     }
 
-    /* convenient money expressions on the ledger.
-       Profit is computed ON THE SALE LINE from its own sale price and lot cost:
-         revenue = sell_price * |qty|,  cost = unit_cost * |qty|,  gain = (sell - cost) * |qty|.
-       Purchases never enter this. (If you want revenue NET of discount, swap the
-       sale-price expressions for net_amount.) */
+    /* Money expressions on the ledger, taken from the columns each transaction
+       type actually posts to:
+
+         revenue = net_amount        the sale's own sub total, discount applied
+         cost    = ABS(cost_amount)  the sale's own inventory value, stored
+                                     negative because stock left
+         gain    = revenue - cost
+
+       These were previously rebuilt from sell_price * |qty| and unit_cost *
+       |qty|, which recomputed the line instead of reading it. That ignored
+       every line discount, so a discounted sale reported its full list price as
+       revenue. Purchases never enter this — they carry no sales value. */
     private function eRevenue(): string
     {
-        return $this->conv('COALESCE(sell_price, unit_price, 0) * ABS(quantity)');
+        return $this->conv('net_amount');
     }
     private function eCogs(): string
     {
-        return $this->conv('unit_cost * ABS(quantity)');
+        return $this->conv('ABS(cost_amount)');
     }
     private function eGain(): string
     {
-        return $this->conv('(COALESCE(sell_price, unit_price, 0) - unit_cost) * ABS(quantity)');
+        return $this->conv('(net_amount - ABS(cost_amount))');
     }
 
     /* ============================================================
@@ -309,7 +322,11 @@ class GainCostController extends Controller
                 })))
             ->when($this->dropZeroValueRows, fn($qq) => $qq->where(fn($w) => $w
                 ->where('line_amount', '<>', 0)->orWhere('net_amount', '<>', 0)
-                ->orWhere('grand_total_amount', '<>', 0)->orWhere('sell_price', '<>', 0)->orWhere('unit_price', '<>', 0)));
+                ->orWhere('grand_total_amount', '<>', 0)->orWhere('sell_price', '<>', 0)->orWhere('unit_price', '<>', 0)
+                // Inventory movements (purchase, return, adjustment, transfer)
+                // carry no sales value at all, so cost_amount is the only thing
+                // marking them as real — without it they would be dropped here.
+                ->orWhere('cost_amount', '<>', 0)));
     }
 
     /** Current stock = purchase/receipt lots that still have quantity remaining.
@@ -478,7 +495,7 @@ class GainCostController extends Controller
         ')->first();
 
         $purch = (float) ($this->purchases($from, $to, $pay)
-            ->selectRaw('-SUM(' . $this->conv('line_amount') . ') as a')->value('a') ?? 0);
+            ->selectRaw('SUM(' . $this->conv('cost_amount') . ') as a')->value('a') ?? 0);
         $expense = (float) ($this->expenses($from, $to, $pay)
             ->selectRaw('SUM(' . $this->conv('amount') . ') as a')
             ->value('a') ?? 0);
@@ -532,6 +549,18 @@ class GainCostController extends Controller
         $this->setDisplay($r);
         [$from, $to, $pay] = $this->filters($r);
 
+        return response()->json($this->trendSeries($from, $to, $pay));
+    }
+
+    /**
+     * Per-bucket revenue / cost / gain over the period.
+     *
+     * Extracted from trend() so the Excel Summary sheet charts exactly the same
+     * numbers the on-screen trend shows, instead of recomputing them and
+     * risking the two drifting apart.
+     */
+    private function trendSeries(string $from, string $to, ?string $pay): array
+    {
         $sale = $this->sales($from, $to, $pay)->groupBy('posting_date')
             ->selectRaw('posting_date as d, SUM(' . $this->eRevenue() . ') as rev, SUM(' . $this->eCogs() . ') as cogs')->get();
         $exp = $this->expenses($from, $to, $pay)
@@ -585,7 +614,7 @@ class GainCostController extends Controller
                 'gain'    => round($v['rev'] - $cost, 2),
             ];
         }
-        return response()->json(['byDay' => $byDay, 'series' => $out]);
+        return ['byDay' => $byDay, 'series' => $out];
     }
 
     /* ============================================================
@@ -700,7 +729,7 @@ class GainCostController extends Controller
             MAX(vendor_name) as who,
             MAX(payment_method) as pay,
             MAX(currency_name) as cur,
-            -SUM(' . $this->conv('line_amount') . ') as amount,
+            SUM(' . $this->conv('cost_amount') . ') as amount,
             COUNT(*) as items
         ')
                 ->groupByRaw($this->docKey())
@@ -759,7 +788,7 @@ class GainCostController extends Controller
             ->groupByRaw($this->docKey())
             ->selectRaw($this->docKey() . ' as doc,
             MIN(posting_date) as date, MAX(vendor_name) as vendor,
-            COUNT(*) as items, -SUM(' . $this->conv('line_amount') . ') as amount')
+            COUNT(*) as items, SUM(' . $this->conv('cost_amount') . ') as amount')
             ->orderByDesc('date')->get();
 
         $total = $grouped->count();
@@ -876,7 +905,7 @@ class GainCostController extends Controller
             ->selectRaw('vendor_id, MAX(vendor_name) as name,
                 COUNT(DISTINCT ' . $this->docKey() . ') as docs,
                 SUM(ABS(quantity)) as qty,
-                -SUM(' . $this->conv('line_amount') . ') as spent')
+                SUM(' . $this->conv('cost_amount') . ') as spent')
             ->get();
 
         $lines = $rows->sortByDesc('spent')->map(fn($x) => ['cells' => [
@@ -914,6 +943,7 @@ class GainCostController extends Controller
                 MAX(customer_name) as customer,
                 MAX(vendor_name) as vendor,
                 MAX(payment_method) as pay,
+                MAX(remark) as reason,
                 SUM(ABS(quantity)) as qty')
             ->orderByDesc('date')->get();
 
@@ -926,6 +956,7 @@ class GainCostController extends Controller
                 ['v' => $x->doc ?: '—'],
                 ['v' => $who],
                 $x->pay ?: '—',
+                ['v' => $this->returnReason($x->reason)],
                 $this->n0((float) $x->qty),
             ]];
         })->values();
@@ -941,9 +972,28 @@ class GainCostController extends Controller
                 ['Documents', $rows->count(), 'purchase', '#'],
                 ['Units', round($totQty, 2), 'revenue', '#'],
             ],
-            'columns' => ['Date', 'Document', $isSale ? 'Customer' : 'Vendor', 'Payment', 'Units'],
+            'columns' => ['Date', 'Document', $isSale ? 'Customer' : 'Vendor', 'Payment', 'Reason', 'Units'],
             'lines'   => $lines,
         ];
+    }
+
+    /**
+     * Why the goods came back, for display.
+     *
+     * The return flow stores the note wrapped as "[Returned: broken screen]",
+     * which is useful in the remark column of a document but noisy as a report
+     * cell, so the wrapper is unpicked here. Older rows, or a return saved
+     * without a note, fall back to a dash rather than showing "No remark".
+     */
+    private function returnReason($remark): string
+    {
+        $text = trim((string) $remark);
+
+        if (preg_match('/^\[Returned:\s*(.*?)\s*\]$/i', $text, $m)) {
+            $text = $m[1];
+        }
+
+        return ($text === '' || strcasecmp($text, 'No remark') === 0) ? '—' : $text;
     }
     /** P&L view — KPI header + recent sale lines. Serves Net Revenue / Cost / Net Gain
      *  cards (period scope) AND the trend chart points (single day / range / cumulative). */
@@ -1276,9 +1326,9 @@ class GainCostController extends Controller
 
    private function detailPurchase($documentNo): array
     {
-        // pull BOTH the receipt rows (Purchase, entry_type positive, line_amount negative)
-        // AND the return rows (Purchase Return, entry_type negative, line_amount positive)
-        // for this document, so the GRN nets down when part of it was returned.
+        // pull BOTH the receipt rows (Purchase, cost_amount positive) AND the
+        // return rows (Purchase Return, cost_amount negative) for this document,
+        // so the GRN nets down when part of it was returned.
         $rows = ItemLedgerEntry::whereRaw($this->docKey() . ' = ?', [$documentNo])
             ->whereIn('document_type', array_merge(['Purchase'], $this->purchaseReturnDocTypes))
             ->get();
@@ -1291,11 +1341,10 @@ class GainCostController extends Controller
         foreach ($rows as $l) {
             $isReturn = in_array($l->document_type, $this->purchaseReturnDocTypes, true);
 
-            // receipt line_amount is negative → flip to positive cost.
-            // return  line_amount is positive → keep, but show as a negative (subtract).
-            $lineVal = $isReturn
-                ? -$this->dispv(abs((float) $l->line_amount), $l->factor)   // return reduces cost
-                :  $this->dispv(abs((float) $l->line_amount), $l->factor);  // receipt adds cost
+            // cost_amount already carries the direction — positive on a receipt,
+            // negative on a return — so it is used as stored rather than having
+            // its sign rebuilt from the document type.
+            $lineVal = $this->dispv((float) $l->cost_amount, $l->factor);
 
             // qty: receipt is +, return is − (stock direction)
             $qtyVal = $isReturn
@@ -1756,8 +1805,9 @@ class GainCostController extends Controller
         $ss->getProperties()->setCreator('Gain & Cost')->setTitle('Gain & Cost')
             ->setSubject("Period {$from} to {$to} ({$code})");
         $this->xlSummary($ss->getActiveSheet(), $from, $to, $pay);
-        $this->xlSales($ss->createSheet(), $from, $to, $pay);
-        $this->xlPurchases($ss->createSheet(), $from, $to, $pay);
+        // Sales / Purchases by-document summary sheets were dropped: the
+        // Sales Lines and Purchase Lines sheets carry the same documents at
+        // line level, and Excel's own subtotalling covers the grouping.
 
         // build the Expenses sheet only if there are expense rows in range
         if ($this->expenses($from, $to, $pay)->exists()) {
@@ -1765,12 +1815,17 @@ class GainCostController extends Controller
         }
 
         $this->xlSalesLines($ss->createSheet(), $from, $to, $pay);
+        $this->xlPurchaseLines($ss->createSheet(), $from, $to, $pay);
         $this->xlStock($ss->createSheet());
         $ss->setActiveSheetIndex(0);
 
         $name = "gain-cost_{$code}_{$from}_to_{$to}.xlsx";
         return response()->streamDownload(function () use ($ss) {
-            (new XlsxWriter($ss))->save('php://output');
+            // Charts are skipped by default — the Summary sheet's Net Gain
+            // trend only reaches the file with this turned on.
+            $writer = new XlsxWriter($ss);
+            $writer->setIncludeCharts(true);
+            $writer->save('php://output');
         }, $name, [
             'Content-Type'  => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Cache-Control' => 'max-age=0',
@@ -1949,76 +2004,73 @@ class GainCostController extends Controller
         $this->xlWidths($sh, ['A' => 28, 'B' => 3, 'C' => 22]);
         $sh->getStyle('C5:C' . $row)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
         $sh->setShowGridlines(false);
+
+        $this->xlNetGainChart($sh, $from, $to, $pay, $row + 2);
     }
 
-    private function xlSales(Worksheet $sh, string $from, string $to, ?string $pay): void
+    /**
+     * "Net Gain — Accumulated" as a real Excel chart on the Summary sheet.
+     *
+     * Excel charts can only plot cells, so the running total is written into a
+     * column first. It goes far to the right (AA/AB) rather than being hidden:
+     * Excel skips hidden cells when plotting, so hiding the source is exactly
+     * what makes a chart come out empty.
+     */
+    private function xlNetGainChart(Worksheet $sh, string $from, string $to, ?string $pay, int $topRow): void
     {
-        $sh->setTitle('Sales');
-        $rows = $this->sales($from, $to, $pay)->groupBy('document_no')->selectRaw('
-                document_no as doc, MIN(posting_date) as date, MAX(customer_name) as customer,
-                MAX(payment_method) as pay, SUM(ABS(quantity)) as qty,
-                SUM(' . $this->eRevenue() . ') as revenue, SUM(' . $this->eCogs() . ') as cogs, SUM(' . $this->eGain() . ') as gain
-            ')->orderByDesc('date')->get();
-
-        $hr = $this->xlBand($sh, 'I', 'Sales by document', [
-            'Period' => $this->niceDate($from) . ' – ' . $this->niceDate($to),
-            'View' => $this->disp['code'],
-            'Payment' => $pay ?: 'All',
-        ]);
-        $this->xlHeadRow($sh, $hr, [['Document', 'l'], ['Date', 'l'], ['Customer', 'l'], ['Payment', 'l'], ['Units', 'r'], ['Revenue', 'r'], ['Cost', 'r'], ['Gain', 'r'], ['Margin', 'r']]);
-
-        $r = $hr + 1;
-        $start = $r;
-        $data = [];
-        foreach ($rows as $x) {
-            $rev = (float) $x->revenue;
-            $gain = (float) $x->gain;
-            $data[] = [$x->doc, Carbon::parse($x->date)->format('Y-m-d'), $x->customer, $x->pay, (float) $x->qty, $rev, (float) $x->cogs, $gain, $rev ? $gain / $rev : 0];
+        $series = $this->trendSeries($from, $to, $pay)['series'];
+        if (count($series) < 2) {
+            return;   // a single point is not a trend worth drawing
         }
-        if ($data) $sh->fromArray($data, null, 'A' . $start);
-        $end = $data ? $start + count($data) - 1 : $start;
-        if (!$data) $sh->setCellValue('A' . $start, 'No sales in this period.');
 
-        $tr = $end + 1;
-        $sh->setCellValue('A' . $tr, 'TOTAL');
-        foreach (['E', 'F', 'G', 'H'] as $c) $sh->setCellValue($c . $tr, "=SUM({$c}{$start}:{$c}{$end})");
-        $sh->setCellValue('I' . $tr, "=IF(F{$tr}=0,0,H{$tr}/F{$tr})");
-        $this->xlStyleTable($sh, $start, $end, $tr, 'I', ['money' => ['F', 'G', 'H'], 'gain' => 'H', 'qty' => ['E'], 'pct' => ['I'], 'date' => 'B']);
-        $this->xlWidths($sh, ['A' => 20, 'B' => 12, 'C' => 26, 'D' => 14, 'E' => 10, 'F' => 15, 'G' => 15, 'H' => 15, 'I' => 10]);
-        $sh->setAutoFilter("A{$hr}:I{$end}");
-        $sh->setShowGridlines(false);
+        // Source block parked well clear of the summary figures in A–C.
+        $cat = 'AA';
+        $val = 'AB';
+        $dataTop = 4;
+        $sh->setCellValue($cat . ($dataTop - 1), 'Period');
+        $sh->setCellValue($val . ($dataTop - 1), 'Net Gain — Accumulated');
+
+        $running = 0.0;
+        $r = $dataTop;
+        foreach ($series as $point) {
+            $running += (float) $point['gain'];
+            $sh->setCellValue($cat . $r, $point['label']);
+            $sh->setCellValue($val . $r, round($running, 2));
+            $sh->getStyle($val . $r)->getNumberFormat()->setFormatCode($this->xlMoneyFmt());
+            $r++;
+        }
+        $last = $r - 1;
+        $count = $last - $dataTop + 1;
+
+        $labels = [new DataSeriesValues(DataSeriesValues::DATASERIES_TYPE_STRING, "Summary!\${$val}\$" . ($dataTop - 1), null, 1)];
+        $cats   = [new DataSeriesValues(DataSeriesValues::DATASERIES_TYPE_STRING, "Summary!\${$cat}\${$dataTop}:\${$cat}\${$last}", null, $count)];
+        $values = [new DataSeriesValues(DataSeriesValues::DATASERIES_TYPE_NUMBER, "Summary!\${$val}\${$dataTop}:\${$val}\${$last}", null, $count)];
+
+        $plot = new PlotArea(null, [new DataSeries(
+            DataSeries::TYPE_LINECHART,
+            DataSeries::GROUPING_STANDARD,
+            range(0, count($values) - 1),
+            $labels,
+            $cats,
+            $values,
+            null,
+            DataSeries::STYLE_SMOOTHMARKER
+        )]);
+
+        $chart = new Chart(
+            'netGainAccumulated',
+            new ChartTitle('Net Gain — Accumulated  (' . $this->disp['code'] . ')'),
+            new ChartLegend(ChartLegend::POSITION_BOTTOM, null, false),
+            $plot
+        );
+        // Belt and braces: never skip a data point because Excel considers its
+        // cell hidden or filtered out.
+        $chart->setPlotVisibleOnly(false);
+        $chart->setTopLeftPosition('A' . $topRow);
+        $chart->setBottomRightPosition('J' . ($topRow + 20));
+        $sh->addChart($chart);
     }
 
-    private function xlPurchases(Worksheet $sh, string $from, string $to, ?string $pay): void
-    {
-        $sh->setTitle('Purchases');
-          $rows = $this->purchases($from, $to, $pay)->groupBy('document_no')->selectRaw('
-                document_no as doc, MIN(posting_date) as date, MAX(vendor_name) as vendor, MAX(payment_method) as pay,
-                COUNT(*) as line_count, SUM(ABS(quantity)) as qty, -SUM(' . $this->conv('line_amount') . ') as cost
-            ')->orderByDesc('date')->get();
-        $hr = $this->xlBand($sh, 'G', 'Stock purchases  ·  informational, not in profit', [
-            'Period' => $this->niceDate($from) . ' – ' . $this->niceDate($to),
-            'View' => $this->disp['code'],
-            'Payment' => $pay ?: 'All',
-        ]);
-        $this->xlHeadRow($sh, $hr, [['Document', 'l'], ['Date', 'l'], ['Vendor', 'l'], ['Payment', 'l'], ['Lines', 'r'], ['Units', 'r'], ['Cost', 'r']]);
-
-        $r = $hr + 1;
-        $start = $r;
-        $data = [];
-        foreach ($rows as $x) $data[] = [$x->doc, Carbon::parse($x->date)->format('Y-m-d'), $x->vendor, $x->pay, (int) $x->line_count, (float) $x->qty, (float) $x->cost];
-        if ($data) $sh->fromArray($data, null, 'A' . $start);
-        $end = $data ? $start + count($data) - 1 : $start;
-        if (!$data) $sh->setCellValue('A' . $start, 'No purchases in this period.');
-
-        $tr = $end + 1;
-        $sh->setCellValue('A' . $tr, 'TOTAL');
-        foreach (['F', 'G'] as $c) $sh->setCellValue($c . $tr, "=SUM({$c}{$start}:{$c}{$end})");
-        $this->xlStyleTable($sh, $start, $end, $tr, 'G', ['money' => ['G'], 'int' => ['E'], 'qty' => ['F'], 'date' => 'B']);
-        $this->xlWidths($sh, ['A' => 20, 'B' => 12, 'C' => 26, 'D' => 14, 'E' => 8, 'F' => 10, 'G' => 16]);
-        $sh->setAutoFilter("A{$hr}:G{$end}");
-        $sh->setShowGridlines(false);
-    }
 
     private function xlExpenses(Worksheet $sh, string $from, string $to, ?string $pay): void
     {
@@ -2065,16 +2117,18 @@ class GainCostController extends Controller
             name as product, variant as variant, category_name as category, ABS(quantity) as qty, unit as unit,
             discount_percent as disc_pct, vat as vat_pct,
             ' . $this->conv('unit_cost') . ' as cost,
+            ' . $this->conv('ABS(cost_amount)') . ' as cost_amt,
             ' . $this->conv('COALESCE(sell_price, unit_price)') . ' as sell,
             ' . $this->conv('line_amount') . ' as subtotal,
             ' . $this->conv('discount_amount') . ' as disc_amt,
             ' . $this->conv('vat_amount') . ' as vat_amt,
             ' . $this->conv('net_amount') . ' as net,
             ' . $this->conv('grand_total_amount') . ' as grand,
-            ' . $this->eGain() . ' as profit';
+            ' . $this->eGain() . ' as profit,
+            created_by as by_user, remark as remark';
         $rows = $this->sales($from, $to, $pay)->orderByDesc('posting_date')->orderByDesc('document_no')->selectRaw($select)->get();
 
-        $hr = $this->xlBand($sh, 'T', 'Every sale line  ·  cost, sell & gain', [
+        $hr = $this->xlBand($sh, 'W', 'Every sale line  ·  cost, sell & gain', [
             'Period' => $this->niceDate($from) . ' – ' . $this->niceDate($to),
             'View' => $this->disp['code'],
             'Payment' => $pay ?: 'All',
@@ -2090,7 +2144,8 @@ class GainCostController extends Controller
             ['Category', 'l'],
             ['Qty', 'r'],
             ['Unit', 'l'],
-            ['Cost', 'r'],
+            ['Unit Cost', 'r'],
+            ['Cost Amount', 'r'],
             ['Sell', 'r'],
             ['Subtotal', 'r'],
             ['Disc %', 'r'],
@@ -2100,6 +2155,8 @@ class GainCostController extends Controller
             ['Net', 'r'],
             ['Grand', 'r'],
             ['Gain', 'r'],
+            ['Created By', 'l'],
+            ['Remark', 'l'],
         ]);
 
         $start = $hr + 1;
@@ -2117,6 +2174,7 @@ class GainCostController extends Controller
                 (float) $x->qty,
                 $x->unit,
                 (float) $x->cost,
+                (float) $x->cost_amt,
                 (float) $x->sell,
                 (float) $x->subtotal,
                 ((float) $x->disc_pct) / 100,
@@ -2126,6 +2184,8 @@ class GainCostController extends Controller
                 (float) $x->net,
                 (float) $x->grand,
                 (float) $x->profit,
+                $x->by_user ?: '',
+                $this->returnReason($x->remark),
             ];
         }
         if ($data) $sh->fromArray($data, null, 'A' . $start);
@@ -2134,19 +2194,100 @@ class GainCostController extends Controller
 
         $tr = $end + 1;
         $sh->setCellValue('A' . $tr, 'TOTAL');
-        foreach (['I', 'M', 'O', 'Q', 'R', 'S', 'T'] as $c) $sh->setCellValue($c . $tr, "=SUM({$c}{$start}:{$c}{$end})");
-        $this->xlStyleTable($sh, $start, $end, $tr, 'T', [
-            'money' => ['K', 'L', 'M', 'O', 'Q', 'R', 'S', 'T'],
-            'gain' => 'T',
+        // Unit Cost (K) and Sell (M) are per-unit rates — summing them would be
+        // meaningless, so the extended Cost Amount (L) is what totals against
+        // Net and Gain and lets the three reconcile.
+        foreach (['I', 'L', 'N', 'P', 'R', 'S', 'T', 'U'] as $c) $sh->setCellValue($c . $tr, "=SUM({$c}{$start}:{$c}{$end})");
+        $this->xlStyleTable($sh, $start, $end, $tr, 'W', [
+            'money' => ['K', 'L', 'M', 'N', 'P', 'R', 'S', 'T', 'U'],
+            'gain' => 'U',
             'qty' => ['I'],
-            'pct' => ['N', 'P'],
+            'pct' => ['O', 'Q'],
             'date' => 'B',
         ]);
-        $this->xlWidths($sh, ['A' => 16, 'B' => 12, 'C' => 22, 'D' => 12, 'E' => 14, 'F' => 26, 'G' => 14, 'H' => 16, 'I' => 9, 'J' => 8, 'K' => 12, 'L' => 12, 'M' => 14, 'N' => 8, 'O' => 12, 'P' => 8, 'Q' => 12, 'R' => 14, 'S' => 14, 'T' => 14]);
-        $sh->setAutoFilter("A{$hr}:T{$end}");
+        $this->xlWidths($sh, ['A' => 16, 'B' => 12, 'C' => 22, 'D' => 12, 'E' => 14, 'F' => 26, 'G' => 14, 'H' => 16,
+            'I' => 9, 'J' => 8, 'K' => 12, 'L' => 14, 'M' => 12, 'N' => 14, 'O' => 8, 'P' => 12, 'Q' => 8,
+            'R' => 12, 'S' => 14, 'T' => 14, 'U' => 14, 'V' => 16, 'W' => 30]);
+        $sh->setAutoFilter("A{$hr}:W{$end}");
         $sh->setShowGridlines(false);
     }
 
+
+    /**
+     * Every goods-receipt line, the purchase-side mirror of xlSalesLines.
+     *
+     * The workbook had a Purchases sheet grouped by document but no line-level
+     * view, so there was no way to see what was actually received on a GRN
+     * without opening the GRN itself. Purchase returns are included — they are
+     * part of the same document — and carry negative quantity and cost, so the
+     * sheet totals to net receipts rather than gross.
+     */
+    private function xlPurchaseLines(Worksheet $sh, string $from, string $to, ?string $pay): void
+    {
+        $sh->setTitle('Purchase Lines');
+        $select = '
+            document_no as doc, posting_date as date, document_type as dtype, vendor_name as vendor,
+            lot as lot, item_code as code, name as product, variant as variant, category_name as category,
+            warehouse_name as warehouse, quantity as qty, unit as unit,
+            ' . $this->conv('unit_cost') . ' as cost,
+            ' . $this->conv('cost_amount') . ' as cost_amt,
+            created_by as by_user, remark as remark';
+        $rows = $this->purchases($from, $to, $pay)
+            ->orderByDesc('posting_date')->orderByDesc('document_no')
+            ->selectRaw($select)->get();
+
+        $hr = $this->xlBand($sh, 'P', 'Every purchase line  ·  receipts and returns at cost', [
+            'Period'  => $this->niceDate($from) . ' – ' . $this->niceDate($to),
+            'View'    => $this->disp['code'],
+            'Payment' => $pay ?: 'All',
+        ]);
+        $this->xlHeadRow($sh, $hr, [
+            ['Document', 'l'], ['Date', 'l'], ['Type', 'l'], ['Vendor', 'l'],
+            ['Lot', 'l'], ['Item Code', 'l'], ['Product', 'l'], ['Variant', 'l'],
+            ['Category', 'l'], ['Warehouse', 'l'],
+            ['Qty', 'r'], ['Unit', 'l'], ['Unit Cost', 'r'], ['Cost Amount', 'r'],
+            ['Created By', 'l'], ['Reason / Remark', 'l'],
+        ]);
+
+        $start = $hr + 1;
+        $data = [];
+        foreach ($rows as $x) {
+            $data[] = [
+                $x->doc,
+                Carbon::parse($x->date)->format('Y-m-d'),
+                $x->dtype,
+                $x->vendor,
+                $x->lot,
+                $x->code,
+                $x->product,
+                $x->variant,
+                $x->category,
+                $x->warehouse,
+                (float) $x->qty,
+                $x->unit,
+                (float) $x->cost,
+                (float) $x->cost_amt,
+                $x->by_user ?: '',
+                $this->returnReason($x->remark),
+            ];
+        }
+        if ($data) $sh->fromArray($data, null, 'A' . $start);
+        $end = $data ? $start + count($data) - 1 : $start;
+        if (!$data) $sh->setCellValue('A' . $start, 'No purchase lines in this period.');
+
+        $tr = $end + 1;
+        $sh->setCellValue('A' . $tr, 'TOTAL');
+        foreach (['K', 'N'] as $c) $sh->setCellValue($c . $tr, "=SUM({$c}{$start}:{$c}{$end})");
+        $this->xlStyleTable($sh, $start, $end, $tr, 'P', [
+            'money' => ['M', 'N'],
+            'qty'   => ['K'],
+            'date'  => 'B',
+        ]);
+        $this->xlWidths($sh, ['A' => 16, 'B' => 12, 'C' => 16, 'D' => 24, 'E' => 12, 'F' => 14, 'G' => 26,
+            'H' => 14, 'I' => 16, 'J' => 18, 'K' => 9, 'L' => 8, 'M' => 12, 'N' => 15, 'O' => 16, 'P' => 30]);
+        $sh->setAutoFilter("A{$hr}:P{$end}");
+        $sh->setShowGridlines(false);
+    }
 
     private function xlStock(Worksheet $sh): void
     {
@@ -2327,7 +2468,10 @@ class GainCostController extends Controller
     /** Inventory value (now, post-adjustment) + adjustment gain/loss (in period), at cost. */
     private function inventoryKpis(string $from, string $to, ?string $pay): array
     {
-        $costExpr = $this->conv('unit_cost * ABS(quantity)');
+        // An adjustment posts its value to cost_amount, signed by direction, so
+        // it is read rather than rebuilt from unit_cost * qty. ABS() here
+        // because gain and loss are split into their own columns below.
+        $costExpr = $this->conv('ABS(cost_amount)');
         $pos = $this->purchaseEntryType;   // 'positive' = found = gain
         $neg = $this->saleEntryType;       // 'negative' = lost  = loss
 
