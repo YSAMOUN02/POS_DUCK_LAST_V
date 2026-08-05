@@ -82,8 +82,12 @@ trait ScopesVisibilityByRole
      * cashier's document. Call this immediately after loading the record.
      *
      * @param  string  $ownerColumn  column holding the creator's user id
+     * @param  array{0:string,1:string}|null  $viaLedger
+     *        [$recordProperty, $ledgerColumn] for headers that carry no
+     *        warehouse_id, e.g. ['document_no', 'source_no']. Mirrors the
+     *        arguments given to scopeVisibilityViaLedger() for the same table.
      */
-    protected function authorizeDocumentAccess($record, string $ownerColumn = 'created_user_id'): void
+    protected function authorizeDocumentAccess($record, string $ownerColumn = 'created_user_id', ?array $viaLedger = null): void
     {
         $user = Auth::user();
 
@@ -98,19 +102,36 @@ trait ScopesVisibilityByRole
             return;
         }
 
+        $isOwner = (string) ($record->{$ownerColumn} ?? '') === (string) $user->id;
+        $warehouseIds = $user->warehouses->pluck('id');
+
         // Supervisor: allowed when the document belongs to one of their
-        // warehouses, or when they created it themselves. Documents with no
-        // warehouse column fall back to the creator check.
+        // warehouses, or when they created it themselves.
         if (isset($record->warehouse_id)) {
-            abort_unless(
-                $user->warehouses->pluck('id')->contains((int) $record->warehouse_id)
-                    || (string) ($record->{$ownerColumn} ?? '') === (string) $user->id,
-                403
-            );
+            abort_unless($warehouseIds->contains((int) $record->warehouse_id) || $isOwner, 403);
             return;
         }
 
-        abort_unless((string) ($record->{$ownerColumn} ?? '') === (string) $user->id, 403);
+        // No warehouse_id on the header — reach the warehouse through the
+        // ledger rows the document produced, exactly as the list query does.
+        // Without this the list and the detail disagreed: a supervisor saw an
+        // order in the list via its ledger trail, then got 403 opening it,
+        // because this guard accepted only documents they had created.
+        if ($viaLedger !== null) {
+            [$recordProperty, $ledgerColumn] = $viaLedger;
+            $key = $record->{$recordProperty} ?? null;
+
+            $inWarehouse = $key !== null && $key !== ''
+                && \Illuminate\Support\Facades\DB::table('item_ledger_entries')
+                    ->whereIn('warehouse_id', $warehouseIds)
+                    ->where($ledgerColumn, $key)
+                    ->exists();
+
+            abort_unless($inWarehouse || $isOwner, 403);
+            return;
+        }
+
+        abort_unless($isOwner, 403);
     }
 
     /**

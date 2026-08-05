@@ -126,7 +126,7 @@ public function getSaleOrders(Request $request)
 
         // The list query is scoped; this per-id read was not, so iterating ids
         // exposed every order's lines, prices and customer details.
-        $this->authorizeDocumentAccess($saleOrder);
+        $this->authorizeDocumentAccess($saleOrder, 'created_user_id', ['document_no', 'source_no']);
 
         $lines = $saleOrder->lines->map(function ($line) {
             $quantity = (float) ($line->quantity ?? 0);
@@ -202,7 +202,7 @@ public function getSaleOrders(Request $request)
     {
         $saleOrder = SaleOrderHeader::find($id);
         abort_unless($saleOrder, 404);
-        $this->authorizeDocumentAccess($saleOrder);
+        $this->authorizeDocumentAccess($saleOrder, 'created_user_id', ['document_no', 'source_no']);
 
         $rows = ItemLedgerEntry::where('document_type', 'Sales Invoice')
             ->where('source_no', $saleOrder->document_no)
@@ -233,7 +233,7 @@ public function getSaleOrders(Request $request)
             $saleOrder = SaleOrderHeader::findOrFail($request->sale_order_id);
             // id comes from the request — without this a cashier could cancel or
             // mark returned any order in the system.
-            $this->authorizeDocumentAccess($saleOrder);
+            $this->authorizeDocumentAccess($saleOrder, 'created_user_id', ['document_no', 'source_no']);
 
             $updateData = [
                 'status' => $request->status,
@@ -303,7 +303,7 @@ public function getSaleOrders(Request $request)
         ]);
 
         $saleOrder = SaleOrderHeader::findOrFail($data['id']);
-        $this->authorizeDocumentAccess($saleOrder);
+        $this->authorizeDocumentAccess($saleOrder, 'created_user_id', ['document_no', 'source_no']);
 
         $saleOrder->update([
             'delivery_status' => $data['delivery_status'],
