@@ -2570,9 +2570,97 @@ class Cart extends Component
     #[On('previewQuotation')]
     public function previewQuotation($payload = [])
     {
+        $figures = $this->previewFigures();
+
+        if ($figures === null) {
+            return;
+        }
+
+        $this->dispatch('quotation-preview', [
+            'header' => [
+                // No number is issued — nothing was saved, and printing a real
+                // looking quotation number on an unsaved document invites someone
+                // to quote against it.
+                'quotation_no'    => 'PREVIEW',
+            ] + $this->previewCustomer($payload) + $figures['totals'],
+            'lines' => $figures['lines'],
+        ]);
+    }
+
+    /**
+     * The same preview, on the INVOICE form rather than the quotation form.
+     *
+     * What a cashier shows a customer before taking payment is the invoice they
+     * are about to be given, not a quotation — so the Preview button prints the
+     * Khmer invoice layout, with the same figures the sale would charge.
+     *
+     * document_no is 'PREVIEW' for the same reason quotation_no is: nothing has
+     * been issued, and a real-looking invoice number on an unsaved document is
+     * an invitation to pay against it. Nothing is written here either, so this
+     * needs no permission — see previewQuotation().
+     */
+    #[On('previewInvoice')]
+    public function previewInvoice($payload = [])
+    {
+        $figures = $this->previewFigures();
+
+        if ($figures === null) {
+            return;
+        }
+
+        $totals = $figures['totals'];
+
+        $this->dispatch('invoice-preview', [
+            'header' => [
+                'document_no'    => 'PREVIEW',
+                'posting_date'   => now()->toDateString(),
+                // The invoice form prints its money through the document's own
+                // factor, so it has to travel with the payload — without it a
+                // riel cart would print its figures as dollars.
+                'factor'         => $this->factor,
+                'currency_name'  => $this->currency_name,
+                // Nothing is paid on a cart that has not been through payment, so
+                // the form prints Deposit 0 and the full balance as still owed.
+                'payment_status' => 'Unpaid',
+                'paid_amount'    => 0,
+            ] + $this->previewCustomer($payload, invoice: true) + $totals,
+            'lines' => $figures['lines'],
+        ]);
+    }
+
+    /**
+     * Customer block for a preview.
+     *
+     * The modal sends its own fields; the Preview button on the cart bar sends
+     * none, so fall back to the customer already selected on the cart rather
+     * than printing a preview addressed to "Walk-in Customer" for a named one.
+     *
+     * The two forms name this field differently — the quotation reads
+     * customer_name, the invoice reads contact_name.
+     */
+    private function previewCustomer(array $payload, bool $invoice = false): array
+    {
+        $name = $payload['customer_name'] ?? ($this->customer_name ?: 'Walk-in Customer');
+
+        return [
+            $invoice ? 'contact_name' : 'customer_name' => $name,
+            'phone'   => $payload['customer_phone'] ?? ($this->customer_phone ?? ''),
+            'address' => $payload['customer_address'] ?? ($this->customer_address1 ?? ''),
+            'remarks' => $payload['remark'] ?? '',
+        ];
+    }
+
+    /**
+     * Lines and totals for a preview, shared by both forms so the quotation and
+     * the invoice can never quote different figures for the same cart.
+     *
+     * Returns null (having reported it) when there is nothing to preview.
+     */
+    private function previewFigures(): ?array
+    {
         if (empty($this->cart)) {
             $this->dispatch('payment-error', ['message' => 'Cart is empty']);
-            return;
+            return null;
         }
 
         $lines = [];
@@ -2600,31 +2688,22 @@ class Cart extends Component
                 'unit'               => $cartItem['unit'] ?? '',
                 'quantity'           => $qty,
                 'sell_price'         => $sellPrice,
+                // The invoice form lists services below the goods subtotal rather
+                // than among the numbered items, and needs this to tell them apart.
+                'type'               => $cartItem['type'] ?? 'product',
                 'grand_total_amount' => round($netAmount + $vatAmount, 4),
             ];
         }
 
-        $this->dispatch('quotation-preview', [
-            'header' => [
-                // No number is issued — nothing was saved, and printing a real
-                // looking quotation number on an unsaved document invites someone
-                // to quote against it.
-                'quotation_no'    => 'PREVIEW',
-                // The quotation modal sends its own customer fields; the Preview
-                // button on the cart bar sends none, so fall back to the customer
-                // already selected on the cart rather than printing a preview
-                // addressed to "Walk-in Customer" for a named customer.
-                'customer_name'   => $payload['customer_name'] ?? ($this->customer_name ?: 'Walk-in Customer'),
-                'phone'           => $payload['customer_phone'] ?? ($this->customer_phone ?? ''),
-                'address'         => $payload['customer_address'] ?? ($this->customer_address1 ?? ''),
-                'remarks'         => $payload['remark'] ?? '',
+        return [
+            'lines'  => $lines,
+            'totals' => [
                 'total_amount'    => round($totalAmount, 4),
                 'discount_amount' => round($totalDiscount, 4),
                 'vat_amount'      => round($totalVAT, 4),
                 'grand_total'     => round($totalAmount - $totalDiscount + $totalVAT, 4),
             ],
-            'lines' => $lines,
-        ]);
+        ];
     }
 
     #[On('saveQuotation')]

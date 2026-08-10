@@ -666,7 +666,7 @@ foreach ($cart as $__it) {
                          still put the figures in front of a vendor. Spans the row
                          so it keeps its place whether or not Purchase is shown. --}}
                     @if ($count_cart > 0)
-                        <button onclick="openGrnPreviewModal()"
+                        <button wire:click="openPurchasePreview"
                             class="col-span-2 bg-slate-600 hover:bg-slate-700 text-white font-medium px-1 py-2 rounded-xl shadow-md transition">
                             <i class="fa-solid fa-eye mr-1"></i> Preview
                         </button>

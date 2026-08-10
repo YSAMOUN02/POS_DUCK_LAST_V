@@ -938,20 +938,7 @@ const today = todayLocal();
 
 document.getElementById("grnDate").value = today;
 
-// The GRN modal serves both actions. Preview shows the same date field and the
-// same cart, but swaps Confirm for Preview so nothing on screen can post stock.
-function setGrnModalMode(previewOnly) {
-    document.getElementById("grnModalTitle").textContent = previewOnly
-        ? "Preview"
-        : "Confirm Purchase";
-    document.getElementById("grnModalSubtitle").textContent = previewOnly
-        ? "Preview this cart — nothing is posted"
-        : "Please select GRN date before posting purchase";
-    document.getElementById("grnConfirmBtn").classList.toggle("hidden", previewOnly);
-    document.getElementById("grnPreviewBtn").classList.toggle("hidden", !previewOnly);
-}
-
-function showGrnModal(previewOnly) {
+function openGrnModal() {
     let count_cart_input = document.querySelector("#count_cart_input");
 
     if (count_cart_input.value == 0) {
@@ -961,17 +948,7 @@ function showGrnModal(previewOnly) {
         });
         return;
     }
-
-    setGrnModalMode(previewOnly);
     document.getElementById("grnModal").classList.remove("hidden");
-}
-
-function openGrnModal() {
-    showGrnModal(false);
-}
-
-function openGrnPreviewModal() {
-    showGrnModal(true);
 }
 
 function todayLocal() {
@@ -1008,11 +985,79 @@ function confirmGrn() {
     ).call("post_grn");
 }
 
-// Same date handling as confirmGrn, but calls previewPurchase — which writes
-// nothing and prints the cart — and closes the modal itself, since there is no
-// posted document to report back.
-function confirmGrnPreview() {
-    const date = document.getElementById("grnDate").value;
+/* ===================== Purchase preview modal =====================
+   The counterpart of the sale side's preview: the cart is shown line by line
+   with its totals before anything is printed, and nothing on this path posts a
+   GRN or receives stock. */
+
+window.addEventListener("open-purchase-preview", (event) => {
+    const detail = event.detail?.[0] ?? event.detail ?? {};
+    fillPurchasePreview(detail);
+
+    const modal = document.getElementById("purchasePreviewModal");
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+});
+
+function fillPurchasePreview(detail) {
+    const vendor = detail.vendor ?? {};
+    const factor = Number(detail.factor) || 1;
+    const currency = detail.currency_name ?? "$";
+    const cart = detail.cart ?? [];
+
+    document.getElementById("purchase-preview-vendor").value = vendor.name ?? "";
+    document.getElementById("purchase-preview-phone").value = vendor.phone ?? "";
+    document.getElementById("purchase-preview-address").value = vendor.address ?? "";
+    document.getElementById("purchase-preview-date").value = detail.grn_date ?? todayLocal();
+
+    document.getElementById("purchase-preview-rate-info").textContent =
+        factor > 1 ? `Rate: ${factor.toLocaleString("en-US")}` : "";
+
+    const money = (v) => `${formatMoneyPlain(Number(v || 0) * factor)} ${currency}`;
+
+    let html = "";
+    let total = 0;
+
+    cart.forEach((item, index) => {
+        const qty = Number(item.qty ?? 0);
+        const cost = Number(item.cost_price ?? 0);
+        const lineTotal = qty * cost;
+        total += lineTotal;
+
+        html += `
+            <tr class="hover:bg-gray-50">
+                <td class="px-4 py-3">${index + 1}</td>
+                <td class="px-4 py-3 font-medium text-gray-800">${item.name ?? ""}</td>
+                <td class="px-4 py-3">${item.unit ?? ""}</td>
+                <td class="px-4 py-3">${item.lot ?? "-"}</td>
+                <td class="px-4 py-3 text-right">${formatQty(qty)}</td>
+                <td class="px-4 py-3 text-right">${money(cost)}</td>
+                <td class="px-4 py-3 text-right font-bold text-blue-600">${money(lineTotal)}</td>
+            </tr>
+        `;
+    });
+
+    document.getElementById("purchase-preview-lines").innerHTML = html
+        || `<tr><td colspan="7" class="px-4 py-4 text-center text-gray-400">No items</td></tr>`;
+
+    const deposit = Number(detail.deposit_amount ?? 0);
+
+    document.getElementById("purchase-preview-total").textContent = money(total);
+    document.getElementById("purchase-preview-deposit").textContent = money(deposit);
+    document.getElementById("purchase-preview-balance").textContent = money(total - deposit);
+}
+
+function closePurchasePreviewModal() {
+    const modal = document.getElementById("purchasePreviewModal");
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+}
+
+// Hands the date back to the component before printing, so the previewed
+// document carries the date shown in this modal, then calls previewPurchase —
+// which writes nothing and prints the cart.
+function printPurchasePreview() {
+    const date = document.getElementById("purchase-preview-date").value;
 
     if (!date) {
         showToast({
@@ -1028,8 +1073,6 @@ function confirmGrnPreview() {
 
     component.set("grn_date", date);
     component.call("previewPurchase");
-
-    closeGrnModal();
 }
 
 window.addEventListener("close-grn-modal", () => {

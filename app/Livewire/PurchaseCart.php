@@ -205,6 +205,30 @@ class PurchaseCart extends Component
     }
 
     /**
+     * Opens the purchase preview modal — the counterpart of the sale side's.
+     *
+     * Same shape as Cart::openDocumentPreview(): the cart, its totals and the
+     * vendor go to the browser, which shows them line by line before anything is
+     * printed. Needs no permission; nothing here posts a GRN.
+     */
+    public function openPurchasePreview()
+    {
+        $this->dispatch('open-purchase-preview', [
+            'cart'           => array_values($this->cart),
+            'totals'         => $this->totals,
+            'factor'         => $this->factor,
+            'currency_name'  => $this->currency_name,
+            'deposit_amount' => $this->deposit_amount,
+            'grn_date'       => $this->grn_date,
+            'vendor'         => [
+                'name'    => $this->vendor_name,
+                'phone'   => $this->vendor_phone,
+                'address' => $this->vendor_address1,
+            ],
+        ]);
+    }
+
+    /**
      * Print the cart as it stands, without posting a GRN.
      *
      * No permission check: this reads the caller's OWN cart, writes nothing and

@@ -1647,15 +1647,12 @@
 
         <div class="modal-card-alert space-y-4">
 
-            {{-- Preview opens this same modal with the posting half switched off:
-                 the title changes and Confirm is swapped for Preview, so nothing
-                 on screen offers to receive stock. --}}
             <h2 class="text-xl font-bold">
-                <span id="grnModalTitle">Confirm Purchase</span>
+                Confirm Purchase
                 <span class="text-sm text-gray-500">(GRN Date)</span>
             </h2>
 
-            <p class="text-gray-600" id="grnModalSubtitle">
+            <p class="text-gray-600">
                 Please select GRN date before posting purchase
             </p>
 
@@ -1673,16 +1670,141 @@
                     Cancel
                 </button>
 
-                <button id="grnPreviewBtn" onclick="confirmGrnPreview()" class="hidden bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-xl transition">
-                    <i class="fa-solid fa-eye mr-1"></i> Preview
-                </button>
-
-                <button id="grnConfirmBtn" onclick="confirmGrn()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl transition">
+                <button onclick="confirmGrn()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl transition">
                     Confirm
                 </button>
 
             </div>
 
+        </div>
+    </div>
+
+    {{-- <PURCHASE PREVIEW> — the same modal the sale side shows behind its
+         Preview button: vendor block, the cart line by line, totals, and a
+         single Preview action. Nothing here posts a GRN or receives stock. --}}
+    <div id="purchasePreviewModal" class="modal-overlay-sale hidden">
+
+        <div class="w-full max-w-6xl max-h-[95vh] modal-card-sale">
+
+            {{-- Header --}}
+            <div class="modal-header-sale">
+                <div>
+                    <h2 class="flex items-center gap-2 text-xl font-bold text-white">
+                        <i class="fa-solid fa-eye"></i>
+                        <span>Preview</span>
+                    </h2>
+                    <p class="text-sm text-slate-300">Preview this cart — nothing is posted</p>
+                </div>
+
+                <button type="button" onclick="closePurchasePreviewModal()" class="modal-close-btn">
+                    &times;
+                </button>
+            </div>
+
+            {{-- Body --}}
+            <div class="max-h-[80vh] space-y-4 overflow-y-auto bg-slate-50 p-4">
+
+                {{-- Vendor Info --}}
+                <div class="overflow-hidden rounded-2xl border bg-white shadow-sm">
+                    <div class="flex items-center gap-2 border-b bg-white px-4 py-3">
+                        <i class="fa-solid fa-user-tie text-gray-400"></i>
+                        <h3 class="font-bold text-gray-800">Vendor Info</h3>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-2 p-3 text-sm lg:grid-cols-4">
+                        <div>
+                            <label class="text-xs text-gray-500">Vendor</label>
+                            <input type="text" id="purchase-preview-vendor" readonly
+                                class="mt-0.5 w-full rounded-xl border-gray-300 bg-gray-50 px-3 py-1.5 text-sm shadow-sm outline-none">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-500">Phone</label>
+                            <input type="text" id="purchase-preview-phone" readonly
+                                class="mt-0.5 w-full rounded-xl border-gray-300 bg-gray-50 px-3 py-1.5 text-sm shadow-sm outline-none">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-500">Address</label>
+                            <input type="text" id="purchase-preview-address" readonly
+                                class="mt-0.5 w-full rounded-xl border-gray-300 bg-gray-50 px-3 py-1.5 text-sm shadow-sm outline-none">
+                        </div>
+                        <div>
+                            {{-- Editable, like the customer fields on the sale
+                                 preview: it is the date the printed document
+                                 carries, and previewing is when you notice it is
+                                 wrong. --}}
+                            <label class="text-xs text-gray-500">GRN Date</label>
+                            <input type="date" id="purchase-preview-date"
+                                class="mt-0.5 w-full rounded-xl border-gray-300 px-3 py-1.5 text-sm shadow-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-100 outline-none transition">
+                        </div>
+                    </div>
+                </div>
+
+                {{-- Cart Items --}}
+                <div class="overflow-hidden rounded-2xl border bg-white shadow-sm">
+                    <div class="flex items-center justify-between gap-2 border-b bg-white px-4 py-3">
+                        <h3 class="flex items-center gap-2 font-bold text-gray-800">
+                            <i class="fa-solid fa-boxes-stacked text-gray-400"></i>
+                            Cart Items
+                        </h3>
+                        <span id="purchase-preview-rate-info" class="text-sm text-gray-500"></span>
+                    </div>
+
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-100 text-gray-600">
+                                <tr>
+                                    <th class="px-4 py-3 text-left">#</th>
+                                    <th class="px-4 py-3 text-left">{{ __('Item') }}</th>
+                                    <th class="px-4 py-3 text-left">{{ __('Unit') }}</th>
+                                    <th class="px-4 py-3 text-left">{{ __('Lot') }}</th>
+                                    <th class="px-4 py-3 text-right">{{ __('Qty') }}</th>
+                                    <th class="px-4 py-3 text-right">{{ __('Unit Cost') }}</th>
+                                    <th class="px-4 py-3 text-right">{{ __('Total') }}</th>
+                                </tr>
+                            </thead>
+
+                            <tbody id="purchase-preview-lines" class="divide-y">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                &ensp;
+                {{-- Totals --}}
+                <div class="flex justify-end">
+                    <div class="w-full space-y-2 rounded-2xl border bg-white p-4 shadow-sm md:w-[420px]">
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-500">Total Amount</span>
+                            <span id="purchase-preview-total" class="font-semibold text-gray-800">0</span>
+                        </div>
+
+                        <div class="flex justify-between text-sm">
+                            <span class="text-gray-500">Deposit</span>
+                            <span id="purchase-preview-deposit" class="font-semibold text-gray-800">0</span>
+                        </div>
+
+                        <hr>
+
+                        <div class="flex justify-between text-xl font-bold">
+                            <span class="text-gray-800">Balance</span>
+                            <span id="purchase-preview-balance" class="text-blue-600">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {{-- Footer --}}
+            <div class="flex justify-end gap-3 border-t bg-white px-6 py-4">
+                <button type="button" onclick="closePurchasePreviewModal()"
+                    class="rounded-xl bg-gray-200 px-4 py-2 font-medium text-gray-700 transition hover:bg-gray-300">
+                    Cancel
+                </button>
+
+                <button type="button" onclick="printPurchasePreview()"
+                    class="flex items-center gap-2 rounded-xl bg-slate-600 px-4 py-2 font-medium text-white shadow-md transition hover:bg-slate-700">
+                    <i class="fa-solid fa-eye"></i>
+                    <span>{{ __('Preview') }}</span>
+                </button>
+            </div>
         </div>
     </div>
 

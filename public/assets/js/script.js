@@ -7345,7 +7345,14 @@ function openCustomerCreateFor(context) {
 // survive a preview and come back intact when the modal is reopened via Quote.
 let quotationModalTitleBeforePreview = null;
 
+// Which document the modal's Preview button prints. Opened via Quote it is a
+// quotation; opened via Preview it is the invoice the customer is about to be
+// given, which is what a cashier actually shows them before taking payment.
+let quotationModalIsPreviewOnly = false;
+
 function setQuotationModalMode(previewOnly) {
+    quotationModalIsPreviewOnly = previewOnly;
+
     const title = document.getElementById("quotation-modal-title");
     const subtitle = document.getElementById("quotation-modal-subtitle");
     const saveBtn = document.getElementById("btn-save-quotation");
@@ -7483,38 +7490,58 @@ function submitQuotation() {
     }
 }
 
-// Same customer fields as submitQuotation, but routed to previewQuotation so
-// nothing is written — the server builds the document and hands it straight back
-// for printing.
+// Same customer fields as submitQuotation, but routed to a preview so nothing is
+// written — the server builds the document and hands it straight back for
+// printing. Which document depends on how the modal was opened: Quote previews
+// the quotation being written, Preview previews the INVOICE the customer is
+// about to be handed.
 function previewQuotation() {
-    Livewire.dispatch("previewQuotation", {
-        payload: {
-            customer_name:
-                document.getElementById("quotation-customer-name")?.value ||
-                "Walk-in Customer",
-            customer_phone:
-                document.getElementById("quotation-customer-phone")?.value || "",
-            customer_address:
-                document.getElementById("quotation-customer-address")?.value || "",
-            remark: document.getElementById("quotation-remark")?.value || "",
-        },
-    });
+    const payload = {
+        customer_name:
+            document.getElementById("quotation-customer-name")?.value ||
+            "Walk-in Customer",
+        customer_phone:
+            document.getElementById("quotation-customer-phone")?.value || "",
+        customer_address:
+            document.getElementById("quotation-customer-address")?.value || "",
+        remark: document.getElementById("quotation-remark")?.value || "",
+    };
+
+    Livewire.dispatch(
+        quotationModalIsPreviewOnly ? "previewInvoice" : "previewQuotation",
+        { payload },
+    );
+}
+
+// The profile to print a preview under is the signed-in user's: they are the one
+// issuing it, and no document exists yet to resolve an issuer from.
+function previewProfile() {
+    return typeof pos_profile_for_print !== "undefined"
+        ? pos_profile_for_print
+        : (window.pos_profile_for_print ?? null);
 }
 
 window.addEventListener("quotation-preview", async (e) => {
     const detail = e.detail?.[0] ?? e.detail ?? {};
     try {
-        await printQuotationA4(
-            detail.header ?? {},
-            detail.lines ?? [],
-            typeof pos_profile_for_print !== "undefined"
-                ? pos_profile_for_print
-                : (window.pos_profile_for_print ?? null),
-        );
+        await printQuotationA4(detail.header ?? {}, detail.lines ?? [], previewProfile());
     } catch (err) {
         console.error("Quotation preview failed:", err);
         showToast({
             message: `Failed to preview quotation — ${err?.name ?? "Error"}: ${err?.message ?? err}`,
+            type: "error",
+        });
+    }
+});
+
+window.addEventListener("invoice-preview", async (e) => {
+    const detail = e.detail?.[0] ?? e.detail ?? {};
+    try {
+        await printInvoiceA4(detail.header ?? {}, detail.lines ?? [], previewProfile());
+    } catch (err) {
+        console.error("Invoice preview failed:", err);
+        showToast({
+            message: `Failed to preview invoice — ${err?.name ?? "Error"}: ${err?.message ?? err}`,
             type: "error",
         });
     }
