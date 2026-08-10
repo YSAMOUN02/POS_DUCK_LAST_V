@@ -12,9 +12,13 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.0/css/all.min.css"
         integrity="sha512-DxV+EoADOkOygM4IR9yXP8Sb2qwgidEmeqAEmDKIOfPRQZOWbXCzLC6vjbZyy0vPisbH2SyW27+ddLVCN+OMzQ=="
         crossorigin="anonymous" referrerpolicy="no-referrer" />
-    <script src="{{ asset('assets/js/qz-tray.js') }}"></script>
+    {{-- ?v=<filemtime> on every local asset: static files are cached for 30 days
+         (public/web.config), so an unstamped URL would pin a stale copy. --}}
+    <script src="{{ asset('assets/js/qz-tray.js') }}?v={{ filemtime(public_path('assets/js/qz-tray.js')) }}"></script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
-    <link rel="shortcut icon" href="{{ asset('assets/icon/download.jpg') }}" type="image/x-icon">
+    <link rel="shortcut icon"
+        href="{{ asset('assets/icon/download.jpg') }}?v={{ filemtime(public_path('assets/icon/download.jpg')) }}"
+        type="image/x-icon">
     <link rel="stylesheet"
         href="{{ asset('assets/css/style.css') }}?v={{ filemtime(public_path('assets/css/style.css')) }}">
 

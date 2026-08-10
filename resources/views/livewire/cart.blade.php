@@ -971,6 +971,17 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                                     <i class="fa-solid fa-file-lines"></i> Quote
                                 </button>
                             @endif
+                            {{-- Preview needs NO permission: it prints this cart as it
+                                 stands, writes nothing and issues no number. The Quote
+                                 button above needs quotation.create, so without this a
+                                 user who may not raise a quotation could not even show
+                                 a customer the figures. --}}
+                            @if ($this->count_cart > 0)
+                                <button wire:click="previewQuotation"
+                                    class="bg-slate-600 hover:bg-slate-700 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
+                                    <i class="fa-solid fa-eye"></i> Preview
+                                </button>
+                            @endif
 
                         @endif
 

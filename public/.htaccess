@@ -23,3 +23,20 @@
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
 </IfModule>
+
+# Same static-asset caching as public/web.config gives on IIS, so a deployment
+# behind Apache does not silently re-download the logo, the fonts and ~4.7 MB of
+# vendor JS on every page load. Safe because every asset URL carries
+# ?v=<filemtime> — a changed file is a changed URL.
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css                  "access plus 30 days"
+    ExpiresByType application/javascript    "access plus 30 days"
+    ExpiresByType text/javascript           "access plus 30 days"
+    ExpiresByType image/png                 "access plus 30 days"
+    ExpiresByType image/jpeg                "access plus 30 days"
+    ExpiresByType image/gif                 "access plus 30 days"
+    ExpiresByType image/webp                "access plus 30 days"
+    ExpiresByType image/x-icon              "access plus 30 days"
+    ExpiresByType font/woff2                "access plus 30 days"
+</IfModule>

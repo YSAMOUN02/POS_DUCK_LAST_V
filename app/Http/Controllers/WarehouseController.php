@@ -378,6 +378,10 @@ class WarehouseController extends Controller
             'product_id'      => $p->product_id,
             'product_name'    => $p->product_name,
             'code'            => $p->code,
+            // Selected and grouped above but missing from this map, so every row
+            // reached the stock table with image undefined and fell back to the
+            // placeholder — no product thumbnail ever showed.
+            'image'           => $p->image,
             'unit'            => $p->unit,
             'status'          => (int) $p->status,
             'category_name'   => $p->category_name,

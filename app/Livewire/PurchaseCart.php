@@ -203,6 +203,68 @@ class PurchaseCart extends Component
     {
         return Currency::where('code', '៛')->firstOrFail();
     }
+
+    /**
+     * Print the cart as it stands, without posting a GRN.
+     *
+     * No permission check: this reads the caller's OWN cart, writes nothing and
+     * receives no stock, so a user who may not post a purchase can still put the
+     * figures in front of a vendor. Posting stays gated in post_grn().
+     *
+     * Built to the same shape /fetch-purchase-doc returns for a posted GRN — same
+     * unit_cost/line_amount arithmetic, same riel factor — so the preview and the
+     * document it previews cannot print different numbers. No document number is
+     * issued: printing a real-looking GRN number on an unposted receipt invites
+     * someone to book stock against it.
+     */
+    public function previewPurchase()
+    {
+        if (empty($this->cart)) {
+            $this->dispatch('app-error', ['message' => 'Cart is empty!']);
+            return;
+        }
+
+        $riel = $this->getRielCurrency();
+        $precision = 6;
+
+        $lines = [];
+        foreach ($this->cart as $item) {
+            $qty = round((float) ($item['qty'] ?? 0), $precision);
+            if ($qty <= 0) {
+                continue;
+            }
+
+            $unitCost = round((float) ($item['cost_price'] ?? 0), $precision);
+
+            $lines[] = [
+                'name'        => $item['name'] ?? '',
+                'unit'        => $item['unit'] ?? '',
+                'quantity'    => $qty,
+                'unit_cost'   => $unitCost,
+                'line_amount' => round($qty * $unitCost, $precision),
+            ];
+        }
+
+        $this->dispatch('purchase-preview', [
+            'no'             => 'PREVIEW',
+            'vendor'         => [
+                'name'     => $this->vendor_name,
+                'phone1'   => $this->vendor_phone,
+                'address1' => $this->vendor_address1,
+            ],
+            'lines'          => $lines,
+            // No warehouse picked yet is normal when previewing — the receiving
+            // site is only required to post.
+            'location_name'  => ($this->warehouse_id ? Warehouse::find($this->warehouse_id)?->name : null) ?? '-',
+            'created_by'     => Auth::user()->username ?? 'NA',
+            'factor'         => $riel->factor,
+            'currency_name'  => $riel->code,
+            'deposit_amount' => round((float) $this->deposit_amount, $precision),
+            'remark'         => $this->remark,
+            'shop'           => \App\Http\Controllers\PurchasingController::shopProfileForPrint(Auth::user()->username ?? null),
+        ]);
+    }
+
     public function post_grn()
     {
         if (!Auth::user()->hasPermission('purchasing.purchase')) {

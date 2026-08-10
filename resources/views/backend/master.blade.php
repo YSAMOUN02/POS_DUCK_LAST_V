@@ -14,10 +14,16 @@
     <meta name="google" content="notranslate">
     <meta name="csrf-token" content="{{ csrf_token() }}">
 
-    <link rel="stylesheet" href="{{ URL('assets/css/fonts6/css/all.css') }}">
+    {{-- Every local asset below is stamped with ?v=<filemtime>: static files are
+         cached for 30 days (public/web.config), so an unstamped URL would pin a
+         stale copy in every cashier's browser until they cleared it by hand. --}}
+    <link rel="stylesheet"
+        href="{{ URL('assets/css/fonts6/css/all.css') }}?v={{ filemtime(public_path('assets/css/fonts6/css/all.css')) }}">
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
-    <link rel="shortcut icon" href="{{ asset('assets/icon/download.jpg') }}" type="image/x-icon">
+    <link rel="shortcut icon"
+        href="{{ asset('assets/icon/download.jpg') }}?v={{ filemtime(public_path('assets/icon/download.jpg')) }}"
+        type="image/x-icon">
     <link rel="stylesheet"
         href="{{ asset('assets/css/style.css') }}?v={{ filemtime(public_path('assets/css/style.css')) }}">
 
@@ -28,8 +34,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Khmer:wght@100..900&display=swap" rel="stylesheet">
 
     <livewire:styles />
-    <script src="{{ asset('assets/js/html2canvas.min.js') }}"></script>
-    <script src="{{ asset('assets/js/qz-tray.js') }}"></script>
+    <script
+        src="{{ asset('assets/js/html2canvas.min.js') }}?v={{ filemtime(public_path('assets/js/html2canvas.min.js')) }}">
+    </script>
+    <script src="{{ asset('assets/js/qz-tray.js') }}?v={{ filemtime(public_path('assets/js/qz-tray.js')) }}"></script>
     <title>POS System</title>
 </head>
 
@@ -583,8 +591,11 @@
 
         document.addEventListener('scroll', () => infoPopup.classList.remove('show'), true);
     </script>
-    <script src="{{ asset('assets/js/flowbite.min.js') }}"></script>
-    <script src="{{ asset('assets/js/html2pdf.bundle.min.js') }}"></script>
+    <script src="{{ asset('assets/js/flowbite.min.js') }}?v={{ filemtime(public_path('assets/js/flowbite.min.js')) }}">
+    </script>
+    <script
+        src="{{ asset('assets/js/html2pdf.bundle.min.js') }}?v={{ filemtime(public_path('assets/js/html2pdf.bundle.min.js')) }}">
+    </script>
     {{-- <script src="https://cdn.jsdelivr.net/npm/flowbite@4.0.1/dist/flowbite.min.js"></script> --}}
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     {{-- <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script> --}}

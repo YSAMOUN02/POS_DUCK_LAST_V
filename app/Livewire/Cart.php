@@ -2525,22 +2525,27 @@ class Cart extends Component
         );
     }
 
-    #[On('saveQuotation')]
     /**
      * Build the quotation exactly as saveQuotation would, but write nothing and
      * hand it straight to the printer.
      *
-     * Gated on quotation.view rather than .create: looking at what a quotation
-     * would say is not the same as issuing one, and a user who may only read
-     * quotations should still be able to show a customer the figures.
+     * Listens on 'previewQuotation'. The attribute here used to read
+     * #[On('saveQuotation')], which wired the SAVE event to this method and left
+     * saveQuotation() with no listener at all — pressing "Save Quotation" only
+     * printed a preview and stored nothing, and the Preview button did nothing,
+     * since a dispatched Livewire event only reaches a matching #[On].
+     *
+     * No permission check: this renders the caller's OWN cart, reads no stored
+     * document, issues no number and writes nothing, so a user who may not raise
+     * a quotation can still show a customer what the figures come to. Issuing
+     * one is still gated — see saveQuotation().
      *
      * The per-line arithmetic mirrors saveQuotation on purpose — a preview that
      * totals differently from the document it previews is worse than none.
      */
+    #[On('previewQuotation')]
     public function previewQuotation($payload = [])
     {
-        abort_unless(Auth::user()->hasPermission('quotation.view'), 403);
-
         if (empty($this->cart)) {
             $this->dispatch('payment-error', ['message' => 'Cart is empty']);
             return;
@@ -2581,9 +2586,13 @@ class Cart extends Component
                 // looking quotation number on an unsaved document invites someone
                 // to quote against it.
                 'quotation_no'    => 'PREVIEW',
-                'customer_name'   => $payload['customer_name'] ?? 'Walk-in Customer',
-                'phone'           => $payload['customer_phone'] ?? '',
-                'address'         => $payload['customer_address'] ?? '',
+                // The quotation modal sends its own customer fields; the Preview
+                // button on the cart bar sends none, so fall back to the customer
+                // already selected on the cart rather than printing a preview
+                // addressed to "Walk-in Customer" for a named customer.
+                'customer_name'   => $payload['customer_name'] ?? ($this->customer_name ?: 'Walk-in Customer'),
+                'phone'           => $payload['customer_phone'] ?? ($this->customer_phone ?? ''),
+                'address'         => $payload['customer_address'] ?? ($this->customer_address1 ?? ''),
                 'remarks'         => $payload['remark'] ?? '',
                 'total_amount'    => round($totalAmount, 4),
                 'discount_amount' => round($totalDiscount, 4),
@@ -2594,6 +2603,7 @@ class Cart extends Component
         ]);
     }
 
+    #[On('saveQuotation')]
     public function saveQuotation($payload)
     {
         abort_unless(Auth::user()->hasPermission('quotation.create'), 403);

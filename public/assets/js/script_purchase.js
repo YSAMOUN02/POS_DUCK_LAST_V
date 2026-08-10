@@ -41,6 +41,22 @@ Sales_btn.addEventListener("click", () => {
 });
 
 
+// Unposted preview of the current purchase cart. The document arrives with its
+// own `shop` letterhead attached (same as a posted GRN), so it never depends on
+// the page-level pos_profile_for_print, which can be stale.
+window.addEventListener("purchase-preview", async (e) => {
+    const doc = e.detail?.[0] ?? e.detail ?? {};
+    try {
+        await printPurchaseOrderA4(doc, doc.shop ?? null);
+    } catch (err) {
+        console.error("Purchase preview failed:", err);
+        showToast({
+            message: `Failed to preview purchase — ${err?.name ?? "Error"}: ${err?.message ?? err}`,
+            type: "error",
+        });
+    }
+});
+
 window.addEventListener("success", (e) => {
     const detail = e.detail[0];
     showToast({

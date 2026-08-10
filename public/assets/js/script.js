@@ -2400,7 +2400,7 @@ function renderStockTable(products, currentPage = 1, perPage = 10) {
                     }"
                         alt="" loading="lazy"
                         onerror="this.src='/assets/defult/placeholder.png'"
-                        class="w-10 h-10 rounded-lg object-cover border border-slate-200 bg-white">
+                        class="w-16 h-16 rounded-lg object-cover border border-slate-200 bg-white">
                 </td>
                 <td class="px-3 text-left text-sm font-medium">${p.product_name}</td>
                 <td class="px-3 text-left text-sm">${p.category_name ?? "NA"}</td>

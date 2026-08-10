@@ -5509,15 +5509,14 @@
             <div class="flex justify-between gap-3 border-t bg-white px-6 py-4">
                 <div class="flex gap-2">
 
-                    {{-- Preview needs only quotation.view: showing a customer the
-                         figures is not the same as issuing the document. --}}
-                    @if (Auth::user()->hasPermission('quotation.view'))
-                        <button id="btn-preview-quotation" type="button" onclick="previewQuotation()"
-                            class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-medium rounded-xl shadow-md transition flex items-center gap-2">
-                            <i class="fa-solid fa-eye"></i>
-                            <span>{{ __('Preview') }}</span>
-                        </button>
-                    @endif
+                    {{-- Preview needs no permission at all: showing a customer the
+                         figures is not the same as issuing the document, and this
+                         prints the current cart without reading or writing one. --}}
+                    <button id="btn-preview-quotation" type="button" onclick="previewQuotation()"
+                        class="px-4 py-2 bg-slate-600 hover:bg-slate-700 text-white font-medium rounded-xl shadow-md transition flex items-center gap-2">
+                        <i class="fa-solid fa-eye"></i>
+                        <span>{{ __('Preview') }}</span>
+                    </button>
 
                     {{-- Saving is gated on quotation.create. Rendered disabled rather
                          than hidden so it is obvious the action exists but is not
