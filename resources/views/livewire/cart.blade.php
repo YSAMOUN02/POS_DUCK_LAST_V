@@ -14,38 +14,6 @@
                 {{-- Control group --}}
                 <div class="hd-controls">
 
-                    {{-- Customer Display on/off --}}
-                    <label class="hd-item" title="Customer Display">
-                        <i class="fa-solid fa-tv"></i>
-                        <span class="cd-switch">
-                            <input type="checkbox" id="customerDisplayToggle">
-                            <span class="cd-track"><span class="cd-knob"></span></span>
-                        </span>
-                    </label>
-
-                    <span class="hd-sep"></span>
-
-                    {{-- Drag items into the cart instead of tapping them. Off by
-                         default: tapping stays the fastest way to ring up a sale,
-                         and a drag gesture on a touch screen can fight scrolling. --}}
-                    <label class="hd-item" title="{{ __('Drag items to cart') }}">
-                        <i class="fa-solid fa-hand-pointer"></i>
-                        <span class="cd-switch">
-                            <input type="checkbox" id="dragToCartToggle">
-                            <span class="cd-track"><span class="cd-knob"></span></span>
-                        </span>
-                    </label>
-
-                    <span class="hd-sep"></span>
-
-                    {{-- Display theme --}}
-                    <button type="button" id="displayThemeToggle" class="hd-item"
-                        title="Customer Display: Dark / Light">
-                        <i class="fa-solid fa-moon"></i>
-                    </button>
-
-                    <span class="hd-sep"></span>
-
                     {{-- Refresh --}}
                     <button type="button" id="refreshBtn" class="hd-item" data-popover-target="popover-user-profile"
                         title="Refresh">

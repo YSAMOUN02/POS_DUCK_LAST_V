@@ -1,4 +1,14 @@
-if(user_role === "admin" ){
+// NOTE: this used to be gated behind `if (user_role === "admin")`, which
+// predates the permission system and conflicts with it. The blade renders the
+// Users section on hasPermission('user.view'), so a supervisor granted that
+// permission saw the section and its buttons while every function below was
+// never defined for them — the list never rendered and each button was dead.
+// Real authorization is server-side: the routes carry user.view / user.create /
+// user.edit middleware, and store_user()/update() additionally call
+// authorizeUserAdministration(), which is admin-only. A plain block keeps the
+// original scoping so nothing here leaks to global beyond the existing
+// window.* exports.
+{
 
     
     let userBtn = document.getElementById("user_data");

@@ -6,6 +6,7 @@ use App\Concerns\ScopesVisibilityByRole;
 use App\Models\SaleOrderHeader;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use App\Models\InvoiceHeader;
 use App\Models\ItemLedgerEntry;
@@ -831,5 +832,68 @@ public function getSaleOrders(Request $request)
             $writer->setIncludeCharts(true);
             $writer->save('php://output');
         }, $name, ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet']);
+    }
+
+    /**
+     * Settle every outstanding sale order the caller can actually see.
+     *
+     * Scoped through the SAME visibility rule as the list, so a cashier settles
+     * only their own documents and a supervisor only their warehouses' — the
+     * scope is applied server-side and no id comes from the request, so the
+     * caller cannot widen it.
+     *
+     * Payment fields only. Status and stock are deliberately untouched: being
+     * paid for is not the same as having shipped, and an Ordered document must
+     * not become Completed without stock moving.
+     */
+    public function markAllPaid(Request $request)
+    {
+        abort_unless(Auth::user()->hasPermission('pos_sale.mark_all_paid'), 403);
+
+        $query = SaleOrderHeader::query();
+
+        $this->scopeVisibilityViaLedger($query, 'sale_order_headers.document_no', 'ile.source_no');
+        $this->applySaleOrderFilters($request, $query);
+
+        // Closed documents, and quotations (which carry no balance), stay as
+        // they are. Anything already Paid or N/A is skipped so the count
+        // reported back is what actually changed.
+        $query->whereNotIn('status', ['Cancelled', 'Returned', 'Quotation'])
+            ->where(function ($q) {
+                $q->whereNull('payment_status')
+                    ->orWhereNotIn('payment_status', ['Paid', 'N/A']);
+            });
+
+        // Counted before the write so the response can state exactly what
+        // changed; the update itself is one statement, so there is no
+        // partial-write window.
+        $affected = (clone $query)->count();
+        $outstanding = (float) (clone $query)->sum(DB::raw('GREATEST(COALESCE(grand_total,0) - COALESCE(paid_amount,0), 0)'));
+
+        if ($affected === 0) {
+            return response()->json([
+                'success'  => true,
+                'affected' => 0,
+                'message'  => 'Nothing to update — no unpaid orders in the current view.',
+            ]);
+        }
+
+        // GREATEST keeps an overpayment intact rather than clawing it back to
+        // grand_total. Payment fields only: status and stock are untouched,
+        // because being paid is not the same as having shipped.
+        $query->update([
+            'paid_amount'    => DB::raw('GREATEST(COALESCE(paid_amount,0), COALESCE(grand_total,0))'),
+            'deposit_amount' => DB::raw('GREATEST(COALESCE(deposit_amount,0), COALESCE(grand_total,0))'),
+            'balance_amount' => 0,
+            'payment_status' => 'Paid',
+            'updated_at'     => now(),
+        ]);
+
+        return response()->json([
+            'success'  => true,
+            'affected' => $affected,
+            'settled'  => round($outstanding, 2),
+            'message'  => "Marked {$affected} order(s) as paid.",
+        ]);
     }
 }

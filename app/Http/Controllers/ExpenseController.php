@@ -67,7 +67,22 @@ public function latest(Request $request)
         ? 100000
         : (int) $request->limit;
 
-    $expenses = $query->paginate($limit);
+    // Sum of refunds per original, fetched in one query rather than per row,
+    // so the list can hide the Refund button on anything already settled
+    // instead of only finding out when the POST comes back 422.
+    $expenses = $query->withSum('refunds as refunded_total', 'amount')->paginate($limit);
+
+    $expenses->getCollection()->transform(function ($e) {
+        // Refund amounts are stored negative, so adding gives what is left.
+        $left = $e->refunded_from_id !== null
+            ? 0.0
+            : max(0.0, round((float) $e->amount + (float) ($e->refunded_total ?? 0), 6));
+
+        $e->refundable_amount = $left;
+        $e->is_refundable = $left > 0 && $e->refunded_from_id === null;
+
+        return $e;
+    });
 
     return response()->json([
         'status' => true,

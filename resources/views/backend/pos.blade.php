@@ -132,6 +132,7 @@
         const canTransferStock = @json(Auth::user()->hasPermission('warehouse.transfer'));
         const canMoveStock = @json(Auth::user()->hasPermission('warehouse.movement'));
         const canSellPos = @json(Auth::user()->hasPermission('pos_sale.sell'));
+        const canRefundExpense = @json(Auth::user()->hasPermission('expense.refund'));
 
 
 
@@ -2004,7 +2005,10 @@
                                     <tr class="text-nowrap">
 
                                         <th class="px-3 py-3 font-bold">{{ __('No.') }}</th>
-                                        <th class="px-3 py-3 font-bold">{{ __('Product Code') }}</th>
+                                        {{-- Thumbnail replaces Product Code on the grouped view:
+                                             quicker to scan, and the code is still on the
+                                             per-lot detail. --}}
+                                        <th class="px-3 py-3 font-bold">{{ __('Image') }}</th>
                                         <th class="px-3 py-3 font-bold">{{ __('Product Name') }}</th>
                                         <th class="px-3 py-3 font-bold">{{ __('Category') }}</th>
                                         <th class="px-3 py-3 font-bold text-right">{{ __('Quantity') }}</th>
@@ -4364,6 +4368,12 @@
                                                 {{ __('Remarks') }}
                                             </th>
 
+                                            @if (Auth::user()->hasPermission('expense.refund'))
+                                                <th class="px-3 py-2 text-center font-bold">
+                                                    {{ __('Action') }}
+                                                </th>
+                                            @endif
+
                                         </tr>
                                     </thead>
 
@@ -4511,6 +4521,15 @@
                                        disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5">
                                 <i class="fa-solid fa-truck-fast"></i>
                                 {{ __('Mark All Delivered') }}
+                            </button>
+                        @endif
+
+                        @if (Auth::user()->hasPermission('pos_sale.mark_all_paid'))
+                            <button type="button" id="markAllPaidBtn" onclick="markAllPaid()"
+                                class="min-w-[150px] bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg text-sm
+                                       disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5">
+                                <i class="fa-solid fa-money-bill-wave"></i>
+                                {{ __('Mark All Paid') }}
                             </button>
                         @endif
 

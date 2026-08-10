@@ -12,17 +12,6 @@
 
             </h1>
             <div class="flex items-center gap-3">
-                {{-- Same opt-in drag mode as the POS cart; drag_to_cart.js binds
-                     to #dragToCartToggle and the shared .add-to-cart-btn cards. --}}
-                <label class="flex items-center gap-1.5 cursor-pointer select-none"
-                    title="{{ __('Drag items to cart') }}">
-                    <i class="fa-solid fa-hand-pointer text-slate-500"></i>
-                    <span class="cd-switch">
-                        <input type="checkbox" id="dragToCartToggle">
-                        <span class="cd-track"><span class="cd-knob"></span></span>
-                    </span>
-                </label>
-
                 <div class="px-4" id="refreshBtn" data-popover-target="popover-user-profile">
                     <i id="refresh-icon" class="fa-solid fa-arrows-rotate"></i>
                 </div>
@@ -57,9 +46,13 @@
             $factor = (float) ($this->factor ?: 1);
 
             if ($factor == 1) {
-                $decimal = 2;
+                // 3dp: purchase costs are often quoted per-unit to a tenth of a
+                // cent (e.g. 0.475), and 2dp silently rounded that away on entry.
+                // Trailing zeros are trimmed by $money, so whole amounts still
+                // read as "12" rather than "12.000".
+                $decimal = 3;
                 $step = 0;
-                $thousands = ''; // USD  (was 3 in old purchase cart)
+                $thousands = ''; // USD
             } elseif ($factor >= 4000) {
                 $decimal = 0;
                 $step = 0;

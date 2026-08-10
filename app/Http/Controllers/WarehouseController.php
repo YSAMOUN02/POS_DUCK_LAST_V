@@ -318,6 +318,7 @@ class WarehouseController extends Controller
                 'product.id',
                 'product.name',
                 'product.code',
+                'product.image',
                 'product.unit',
                 'product.status',
                 'categories.name',
@@ -330,6 +331,9 @@ class WarehouseController extends Controller
                 'product.id as product_id',
                 'product.name as product_name',
                 'product.code',
+                // Shown in place of the code on the grouped view — a thumbnail
+                // is quicker to scan than an item number.
+                'product.image',
                 'product.unit',
                 'product.status',
                 'categories.name as category_name',

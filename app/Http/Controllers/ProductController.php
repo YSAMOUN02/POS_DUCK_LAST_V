@@ -314,9 +314,9 @@ public function searchByCategory(Request $request)
             $q->whereIn('warehouse_id', $warehouse_ids);
         }]);
 
-        if (!in_array(Auth::user()->role, ['admin', 'supervisor'])) {
-            $sql->whereIn('type', ['product', 'service']);
-        }
+        // Was admin+supervisor exempt here but admin-only on the grid, so a
+        // supervisor's search returned expense items the grid never showed.
+        $sql->sellableForCurrentUser();
 
         $sql->where('status', 1);
 

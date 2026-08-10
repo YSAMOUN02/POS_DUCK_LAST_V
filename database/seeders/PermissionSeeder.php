@@ -92,6 +92,7 @@ class PermissionSeeder extends Seeder
             'pos_sale.edit_price'         => 'Edit Price (POS)',
             'pos_sale.edit_discount'      => 'Edit Discount (POS)',
             'pos_sale.mark_delivered'     => 'Mark All Orders Delivered (bulk)',
+            'pos_sale.mark_all_paid'      => 'Mark All Orders Paid (bulk)',
             'pos_sale.view_grid'          => 'Product View: Grid (POS)',
             'pos_sale.view_list'          => 'Product View: List (POS)',
             'purchasing.purchase'         => 'Create Purchase',

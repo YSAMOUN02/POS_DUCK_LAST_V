@@ -3,10 +3,31 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Auth;
 
 class Product extends Model
 {
     protected $table = 'product';
+
+    /**
+     * Items allowed to appear in the POS sales grid and its search.
+     *
+     * Goods and services only — 'expence' items belong to the expense flow,
+     * not to a sale. Admins keep the unrestricted view they have always had.
+     *
+     * This rule previously existed in three copies with three different role
+     * tests, so a supervisor saw expense items when searching but not when
+     * browsing, and could add one to a sale from the search results. One
+     * definition now, used by every caller.
+     */
+    public function scopeSellableForCurrentUser($query)
+    {
+        if (Auth::user()?->role === 'admin') {
+            return $query;
+        }
+
+        return $query->whereIn('type', ['product', 'service']);
+    }
     protected $appends = ['stock'];
     // Mass assignable fields
     protected $fillable = [

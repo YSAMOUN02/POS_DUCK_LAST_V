@@ -2205,7 +2205,16 @@ function renderStockTable(products, currentPage = 1, perPage = 10) {
             `
             <tr class="${wh.row} hover:brightness-95 transition-colors">
                 <td class="px-3 text-left text-sm text-gray-600">${rowNumber}</td>
-                <td class="px-3 text-left text-sm">${p.code ?? ""}</td>
+                <td class="px-3 py-1 text-left">
+                    <img src="${
+                        p.image
+                            ? `/assets/startic_img/${encodeURIComponent(p.image)}`
+                            : "/assets/defult/placeholder.png"
+                    }"
+                        alt="" loading="lazy"
+                        onerror="this.src='/assets/defult/placeholder.png'"
+                        class="w-10 h-10 rounded-lg object-cover border border-slate-200 bg-white">
+                </td>
                 <td class="px-3 text-left text-sm font-medium">${p.product_name}</td>
                 <td class="px-3 text-left text-sm">${p.category_name ?? "NA"}</td>
                 <td class="px-3 text-end text-sm font-bold">${parseFloat(p.total_quantity)}</td>
@@ -3546,6 +3555,82 @@ function openEditableMenuPreview(content) {
         .getElementById("expense_search")
         ?.addEventListener("keyup", () => loadExpenses(1));
 
+    function escapeHtml(s) {
+        return String(s ?? "").replace(
+            /[&<>"']/g,
+            (c) =>
+                ({
+                    "&": "&amp;",
+                    "<": "&lt;",
+                    ">": "&gt;",
+                    '"': "&quot;",
+                    "'": "&#39;",
+                })[c],
+        );
+    }
+
+    /**
+     * Reverse an expense entered by mistake.
+     *
+     * Writes a negative mirror row sharing the original's expense_code — the
+     * original is never edited or deleted, so the audit trail keeps both sides.
+     * The server re-checks the permission and the outstanding amount, so a
+     * double-click or a stale list cannot over-refund.
+     */
+    async function refundExpense(id, name) {
+        const reason = prompt(
+            `Refund "${name}"?\n\n` +
+                `This adds a negative row that cancels it out. The original entry is kept.\n\n` +
+                `Reason (optional):`,
+        );
+        if (reason === null) return; // user cancelled the prompt
+
+        try {
+            const res = await fetch("/expenses/refund", {
+                method: "POST",
+                headers: {
+                    "X-CSRF-TOKEN": document.querySelector(
+                        'input[name="_token"]',
+                    ).value,
+                    "Content-Type": "application/json",
+                    Accept: "application/json",
+                },
+                body: JSON.stringify({
+                    expense_id: id,
+                    reason: reason.trim() || null,
+                }),
+            });
+
+            const data = await res.json().catch(() => ({}));
+
+            if (!res.ok || data.status === false) {
+                showToast({
+                    message:
+                        data.message ||
+                        (res.status === 403
+                            ? "You do not have permission to refund expenses."
+                            : `Refund failed (${res.status})`),
+                    type: "error",
+                });
+                return;
+            }
+
+            showToast({
+                message: data.message || "Expense refunded.",
+                type: "success",
+            });
+            loadExpenses(1);
+        } catch (err) {
+            showToast({
+                message: "Refund failed — could not reach the server.",
+                type: "error",
+            });
+        }
+    }
+    // Inline onclick resolves against global scope, but this file's contents
+    // sit inside a block, so the handler has to be exported explicitly.
+    window.refundExpense = refundExpense;
+
     function loadExpenses(page = 1) {
         const params = new URLSearchParams({
             page: page,
@@ -3568,10 +3653,13 @@ function openEditableMenuPreview(content) {
 
                 const expenses = res.data?.data ?? [];
 
+                // 7th column only exists when the Action header was rendered.
+                const colCount = canRefundExpense ? 7 : 6;
+
                 if (!res.status || expenses.length === 0) {
                     tbody.innerHTML = `
                     <tr>
-                        <td colspan="6" class="text-center py-6">
+                        <td colspan="${colCount}" class="text-center py-6">
                             No expense found
                         </td>
                     </tr>
@@ -3584,14 +3672,50 @@ function openEditableMenuPreview(content) {
                         ? res.data.from + index
                         : index + 1;
 
+                    // A refund is a negative mirror of the row it reverses, so
+                    // it is shown in red and cannot itself be refunded.
+                    const isRefund =
+                        expense.refunded_from_id != null ||
+                        Number(expense.amount) < 0;
+
+                    let action = "";
+                    if (canRefundExpense) {
+                        // The server tells us what is still refundable, so a row
+                        // that is already fully refunded shows no button at all
+                        // rather than offering one that would come back 422.
+                        let cell;
+                        if (isRefund) {
+                            cell = `<span class="text-xs text-slate-400">${
+                                expense.refund_reason
+                                    ? escapeHtml(expense.refund_reason)
+                                    : "refund"
+                            }</span>`;
+                        } else if (!expense.is_refundable) {
+                            cell = `<span class="inline-flex items-center gap-1 text-xs text-slate-400">
+                                        <i class="fa-solid fa-check"></i>Refunded
+                                    </span>`;
+                        } else {
+                            cell = `<button type="button"
+                                        onclick="event.stopPropagation(); refundExpense(${expense.id}, '${escapeHtml(
+                                            expense.expense_name ?? "",
+                                        ).replace(/'/g, "\\'")}')"
+                                        class="px-2 py-1 rounded-lg bg-rose-50 text-rose-600 border border-rose-200
+                                               hover:bg-rose-100 text-xs font-semibold">
+                                        <i class="fa-solid fa-rotate-left mr-1"></i>Refund
+                                    </button>`;
+                        }
+                        action = `<td class="border px-3 py-1 text-center">${cell}</td>`;
+                    }
+
                     tbody.innerHTML += `
-                    <tr class="hover:bg-slate-50" onclick="hightlightRow('Table-expense-list', this)">
+                    <tr class="hover:bg-slate-50 ${isRefund ? "text-rose-600" : ""}" onclick="hightlightRow('Table-expense-list', this)">
                         <td class="border px-3 py-1">${rowNo}</td>
                         <td class="border px-3 py-1">${formatDate(expense.expense_date)}</td>
                         <td class="border px-3 py-1">${expense.expense_code ?? ""}</td>
                         <td class="border px-3 py-1">${expense.expense_name ?? ""}</td>
                         <td class="border px-3 py-1 text-right font-bold">${listMoney(expense.amount, expense.factor)}</td>
                         <td class="border px-3 py-1">${expense.note ?? ""}</td>
+                        ${action}
                     </tr>
                 `;
                 });
@@ -5517,6 +5641,63 @@ async function markAllDelivered() {
     } catch (e) {
         console.error(e);
         showToast({ message: "Failed to update deliveries", type: "error" });
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+/**
+ * Settle every unpaid order in the current filtered view.
+ *
+ * Mirrors markAllDelivered: the server re-applies the same visibility scope and
+ * the same filters, so this can only ever touch rows the user is already
+ * looking at. Payment fields only — nothing ships.
+ */
+async function markAllPaid() {
+    const btn = document.getElementById("markAllPaidBtn");
+    const params = currentSaleOrderFilterParams();
+
+    const anyFilter = [...params.values()].some((v) => v !== "");
+    if (
+        !confirm(
+            anyFilter
+                ? "Mark every unpaid order in the current filtered list as Paid?\n\nThis records them as fully paid. It does not ship anything."
+                : "No filters are set — this will mark EVERY unpaid order you can see as Paid.\n\nThis records them as fully paid and cannot be undone in bulk. Continue?",
+        )
+    ) {
+        return;
+    }
+
+    if (btn) btn.disabled = true;
+
+    try {
+        const res = await fetch(`/sale-order/mark-all-paid?${params.toString()}`, {
+            method: "POST",
+            headers: {
+                "X-CSRF-TOKEN":
+                    document.querySelector('input[name="_token"]')?.value ||
+                    document
+                        .querySelector('meta[name="csrf-token"]')
+                        ?.getAttribute("content"),
+                Accept: "application/json",
+            },
+        });
+
+        if (res.status === 403) {
+            showToast({ message: "You don't have permission to do that", type: "error" });
+            return;
+        }
+
+        const data = await res.json();
+        showToast({
+            message: data.message || "Done",
+            type: data.affected > 0 ? "success" : "info",
+        });
+
+        if (data.affected > 0) loadSaleOrders(1);
+    } catch (e) {
+        console.error(e);
+        showToast({ message: "Failed to mark orders paid", type: "error" });
     } finally {
         if (btn) btn.disabled = false;
     }

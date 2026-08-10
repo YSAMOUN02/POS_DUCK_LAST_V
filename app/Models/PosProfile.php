@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Auth;
 
 class PosProfile extends Model
 {
@@ -36,6 +37,33 @@ class PosProfile extends Model
         return static::where('user_report', $userId)->first()
             ?? static::where('user_report', '0')->first()
             ?? static::first();
+    }
+
+    /**
+     * Profile of the person who created a document, by username.
+     *
+     * A printed document should carry the letterhead of whoever raised it, not
+     * of whoever happens to be printing it — otherwise every reprint rebrands
+     * the document to the current user. Purchase-side headers record the
+     * creator as a username string (created_by) rather than a user id, so the
+     * username is resolved here.
+     *
+     * Falls back to the signed-in user when the creator cannot be resolved,
+     * which keeps older rows and 'NA'/'system' entries printing something
+     * sensible instead of nothing.
+     */
+    public static function forCreatorUsername(?string $username): ?self
+    {
+        $username = trim((string) $username);
+
+        if ($username !== '' && !in_array(strtolower($username), ['na', 'system'], true)) {
+            $userId = User::where('username', $username)->value('id');
+            if ($userId) {
+                return static::forUser($userId);
+            }
+        }
+
+        return static::forUser(Auth::id());
     }
 
     public function user()

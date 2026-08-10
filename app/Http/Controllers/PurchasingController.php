@@ -164,15 +164,24 @@ class PurchasingController extends Controller
         // not cache-busted — a browser holding an older copy of the page printed
         // "Your Company" no matter how many times the profile was fixed
         // server-side. Fetched fresh here, it cannot go stale.
-        $doc->shop = self::shopProfileForPrint();
+        $doc->shop = self::shopProfileForPrint($doc->created_by ?? null);
 
         return response()->json($doc);
     }
 
-    /** Print letterhead for whoever is signed in, falling back to the house profile. */
-    public static function shopProfileForPrint(): array
+    /**
+     * Print letterhead for the person who CREATED the document.
+     *
+     * Was resolved from Auth::id(), so a reprint stamped the document with
+     * whoever opened it — a supervisor reprinting a cashier's GRN saw their own
+     * profile. Pass the document's created_by; omitting it keeps the old
+     * signed-in behaviour for callers that have no document in hand.
+     */
+    public static function shopProfileForPrint(?string $createdBy = null): array
     {
-        $profile = PosProfile::forUser(Auth::id());
+        $profile = $createdBy !== null
+            ? PosProfile::forCreatorUsername($createdBy)
+            : PosProfile::forUser(Auth::id());
         $shop = $profile ? $profile->toArray() : [];
         $shop['logo_url'] = PosProfileController::logoUrl();
 

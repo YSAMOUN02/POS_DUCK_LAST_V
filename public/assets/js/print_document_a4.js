@@ -32,6 +32,19 @@ function formatMoneyA4(value) {
     return amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Per-unit PURCHASE cost only. Costs are quoted to a tenth of a cent, so 2dp
+// rounds a real 0.475 down to 0.48 on the printed GRN. Line totals and every
+// customer-facing amount stay on formatMoneyA4 at 2dp — an invoice showing
+// "12.500" would look wrong.
+function formatUnitCostA4(value) {
+    let amount = parseFloat(String(value ?? 0).replace(/,/g, ""));
+    if (isNaN(amount)) amount = 0;
+    return amount.toLocaleString("en-US", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 3,
+    });
+}
+
 // quantities only show decimals when the value actually has a fractional
 // part (6 -> "6", 2.5 -> "2.5"), unlike money which always shows 2 decimals
 function formatQtyA4(value) {
@@ -844,7 +857,7 @@ function buildA4PurchaseItemsTable(lines, factor) {
                 <td class="a4-col-item">${l.name || ""}</td>
                 <td>${l.unit || ""}</td>
                 <td class="a4-col-num">${formatQtyA4(qty)}</td>
-                <td class="a4-col-num">${formatMoneyA4(unitCost)}</td>
+                <td class="a4-col-num">${formatUnitCostA4(unitCost)}</td>
                 <td class="a4-col-num">${formatMoneyA4(amount)}</td>
             </tr>
         `;

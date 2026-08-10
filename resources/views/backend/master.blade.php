@@ -430,9 +430,9 @@
                 badge.textContent = n;
                 badge.style.display = n > 0 ? 'flex' : 'none';
             }
-            // Called by syncDisplay() when the cart actually changes — see the
-            // note there. Polling this twice a second parsed the cart JSON
-            // ~5,000 times an hour to redraw a number that rarely moves.
+            // Called by refreshCartBadge() when the cart actually changes.
+            // Polling this twice a second parsed the cart JSON ~5,000 times an
+            // hour to redraw a number that rarely moves.
             window.updateMobileBadge = updateMobileBadge;
 
             // adding a product opens nothing, but pulse the button as feedback
@@ -501,152 +501,21 @@
             window.addEventListener('touchend', stopResize);
         }
 
-        // ===== Customer Display =====
-        const cdToggle = document.getElementById('customerDisplayToggle');
-        let cdWindow = null;
-        let lastPayload = '';
-
-        function broadcastCart(force = false) {
-            const el = document.getElementById('cart-sync');
-            if (!el) return;
-            const payload = el.dataset.payload;
-            if (!force && payload === lastPayload) return;
-            lastPayload = payload;
-            localStorage.setItem('pos_customer_display', payload);
-        }
-
-        // delegation → survives Livewire re-renders of the cart header
-        document.addEventListener('change', async (e) => {
-            if (e.target.id !== 'customerDisplayToggle') return;
-
-            if (!e.target.checked) {
-                if (cdWindow && !cdWindow.closed) cdWindow.close();
-                return;
-            }
-
-            // 1️⃣ OPEN FIRST — while the click gesture is still valid
-            cdWindow = window.open("{{ route('pos.customer-display') }}",
-                'pos_customer_display', 'width=1024,height=768');
-
-            if (!cdWindow) {
-                alert('Popup blocked — please allow popups for this site.');
-                e.target.checked = false;
-                return;
-            }
-
-            broadcastCart(true);
-
-            // 2️⃣ THEN find the extended screen and move the window there
-            try {
-                if ('getScreenDetails' in window) {
-                    const details = await window.getScreenDetails(); // permission prompt 1st time
-                    const ext = details.screens.find(s => !s.isPrimary);
-                    if (ext && cdWindow && !cdWindow.closed) {
-                        cdWindow.moveTo(ext.availLeft, ext.availTop);
-                        cdWindow.resizeTo(ext.availWidth, ext.availHeight);
-                    }
-                }
-            } catch (err) {
-                console.warn('Window placement not granted', err);
-            }
-        });
-
-
-        // ===== Customer Display sync (server-based) =====
-        let lastSent = '';
-        window.displayEvent = null;
-
-        function currentDisplayTheme() {
-            return localStorage.getItem(`pos_display_theme_${user_id}`) || 'dark';
-        }
-
-        async function pushDisplayState(force = false) {
-            const el = document.getElementById('cart-sync');
-            if (!el) return;
-
-            const state = JSON.stringify({
-                cart: JSON.parse(el.dataset.payload || '{}'),
-                theme: currentDisplayTheme(),
-                event: window.displayEvent,
-            });
-
-            if (!force && state === lastSent) return;
-            lastSent = state;
-
-            try {
-                await fetch('/pos/display-sync', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content ??
-                            document.querySelector('input[name="_token"]')?.value,
-                    },
-                    body: state,
-                });
-            } catch (e) {}
-        }
-        /* ===== Display sync: event-driven, not polled =====
-           pushDisplayState used to run on a 400ms timer, so every open POS tab
-           woke up 150 times a minute and POSTed whenever the cart differed —
-           which is what was loading the server.
-
-           The cart only changes when Livewire re-renders it (adding an item,
-           changing a quantity, removing a line, completing a sale), so that is
-           when this now fires. HEARTBEAT is a safety net for state that changes
-           without a re-render — the display theme, or a customer screen opened
-           after the last push — not a substitute for it.
-
-           lastSent / lastPayload still guard the POST, so a re-render that did
-           not actually change the cart costs nothing. */
-        const DISPLAY_HEARTBEAT = 5 * 60 * 1000; // 5 minutes
-
-        function syncDisplay(force = false) {
+        // ===== Customer Display / second screen: REMOVED =====
+        // The pop-out customer display, its localStorage broadcast, the
+        // server-side display-sync POST, the 5-minute heartbeat and the display
+        // theme button have all been removed.
+        //
+        // The mobile cart badge was driven by the same syncDisplay() call, so
+        // it is refreshed directly here on the events that used to trigger it.
+        function refreshCartBadge() {
             window.updateMobileBadge?.();
-            broadcastCart(force);      // localStorage -> customer display tab
-            pushDisplayState(force);   // server -> customer display on another device
         }
 
-        // Cart re-rendered: an item was added, edited, removed, or the sale closed.
-        document.addEventListener('livewire:update', () => syncDisplay());
-
-        // A completed sale clears the cart; push the final state immediately
-        // rather than waiting for the next re-render.
-        window.addEventListener('payment-success', () => syncDisplay(true));
-
-        document.addEventListener('DOMContentLoaded', () => syncDisplay(true));
-        if (document.readyState !== 'loading') syncDisplay(true);
-
-        setInterval(() => syncDisplay(), DISPLAY_HEARTBEAT);
-
-
-        // ===== Customer Display theme button (controls display only) =====
-        const DISPLAY_THEME_KEY = `pos_display_theme_${user_id}`;
-
-        function syncThemeButton(theme) {
-            const btn = document.getElementById('displayThemeToggle');
-            if (!btn) return;
-            btn.classList.toggle('dark-on', theme === 'dark');
-            btn.innerHTML = theme === 'dark' ?
-                '<i class="fa-solid fa-sun"></i>' :
-                '<i class="fa-solid fa-moon"></i>';
-        }
-
-        function setDisplayTheme(theme) {
-            localStorage.setItem(DISPLAY_THEME_KEY, theme);
-            localStorage.setItem('pos_display_theme', theme);
-            syncThemeButton(theme);
-        }
-
-        // delegation → survives Livewire re-renders of the cart header
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('#displayThemeToggle')) return;
-            const cur = localStorage.getItem(DISPLAY_THEME_KEY) || 'dark';
-            setDisplayTheme(cur === 'dark' ? 'light' : 'dark');
-        });
-
-        // initial state + repaint icon after Livewire morphs
-        setDisplayTheme(localStorage.getItem(DISPLAY_THEME_KEY) || 'dark');
-        setInterval(() => syncThemeButton(localStorage.getItem(DISPLAY_THEME_KEY) || 'dark'), 1000);
+        document.addEventListener('livewire:update', refreshCartBadge);
+        window.addEventListener('payment-success', refreshCartBadge);
+        document.addEventListener('DOMContentLoaded', refreshCartBadge);
+        if (document.readyState !== 'loading') refreshCartBadge();
 
 
 
@@ -721,7 +590,9 @@
     {{-- <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script> --}}
     <script src="{{ asset('assets/js/script.js') }}?v={{ filemtime(public_path('assets/js/script.js')) }}"></script>
     <script src="{{ asset('assets/js/admin.js') }}?v={{ filemtime(public_path('assets/js/admin.js')) }}"></script>
-    <script src="{{ asset('assets/js/sup_admin.js') }}?v={{ filemtime(public_path('assets/js/admin.js')) }}"></script>
+    {{-- Was cache-busted with admin.js's timestamp, so any change to
+         sup_admin.js alone shipped behind a stale cached copy. --}}
+    <script src="{{ asset('assets/js/sup_admin.js') }}?v={{ filemtime(public_path('assets/js/sup_admin.js')) }}"></script>
 
 
     <script
@@ -732,11 +603,6 @@
         src="{{ asset('assets/js/print_document_a4.js') }}?v={{ filemtime(public_path('assets/js/print_document_a4.js')) }}">
     </script>
 
-    {{-- Optional drag-a-card-into-the-cart input mode, toggled from the cart
-         header. Loaded last so the product grid and cart already exist. --}}
-    <script
-        src="{{ asset('assets/js/drag_to_cart.js') }}?v={{ filemtime(public_path('assets/js/drag_to_cart.js')) }}">
-    </script>
 
     {{-- Right-click a cart line for a wheel-driven quantity stepper. --}}
     <script

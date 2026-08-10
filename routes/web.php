@@ -25,7 +25,6 @@ use App\Http\Controllers\QuotationController;
 
 use App\Http\Controllers\GainCostController;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Cache;
 
 Route::get('/', [AdminController::class, 'login'])->name('login');
 // Handle login post
@@ -193,39 +192,12 @@ Route::middleware(['auth'])->group(function () {
         ->name('quotations.update-status')->middleware('permission:quotation.edit');
     // routes/web.php
     Route::post('/sale-order/mark-all-delivered', [SaleOrderController::class, 'markAllDelivered'])->middleware('permission:pos_sale.mark_delivered');
+    // Settles every unpaid order in the caller's CURRENT filtered view — the
+    // same visibility scope as the list, so it can never reach further.
+    Route::post('/sale-order/mark-all-paid', [SaleOrderController::class, 'markAllPaid'])->middleware('permission:pos_sale.mark_all_paid');
     Route::post('/sale-order/update-delivery-status', [SaleOrderController::class, 'updateDeliveryStatus'])
         ->name('sale-order.update-delivery-status')->middleware('permission:pos_sale.sell');
 
-
- // ===== Customer Display (second screen) =====
-    Route::prefix('pos')->name('pos.')->group(function () {
-
-        // The customer-facing display page (second screen)
-        Route::get('/customer-display', function () {
-            return view('backend.customer_display', [
-                'user_id' => Auth::id(),
-            ]);
-        })->name('customer-display');
-
-        // POS pushes cart state here every 400ms
-        Route::post('/display-sync', function (Request $request) {
-            Cache::put(
-                'pos_display_' . Auth::id(),
-                $request->getContent(),
-                now()->addMinutes(10)
-            );
-            return response()->noContent();
-        })->name('display-sync');
-
-        // Customer display polls this
-        Route::get('/display-state/{userId}', function ($userId) {
-            return response(
-                Cache::get('pos_display_' . $userId, '{}'),
-                200,
-                ['Content-Type' => 'application/json']
-            );
-        })->name('display-state');
-    });
 
     Route::prefix('reports/gain-cost')->middleware('permission:report.profit')->group(function () {
         Route::get('/',             [GainCostController::class, 'index']);        // the page

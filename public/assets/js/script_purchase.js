@@ -904,8 +904,11 @@ function formatQty(value) {
 function formatMoney(value, factor = 1) {
     const amount = Number(value ?? 0) * Number(factor ?? 1);
 
+    // 3dp in USD to match the purchase cart: per-unit costs are quoted to a
+    // tenth of a cent. Trailing zeros are stripped, so whole amounts still
+    // show as "12", not "12.000".
     return Number(factor) === 1
-        ? amount.toFixed(2).replace(/\.?0+$/, "")
+        ? amount.toFixed(3).replace(/\.?0+$/, "")
         : amount.toFixed(0);
 }
 function formatQty(value) {

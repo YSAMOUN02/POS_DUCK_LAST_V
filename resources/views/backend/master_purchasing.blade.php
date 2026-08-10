@@ -291,12 +291,6 @@
         src="{{ asset('assets/js/print_purchase.js') }}?v={{ filemtime(public_path('assets/js/print_purchase.js')) }}">
     </script>
 
-    {{-- Same optional drag-into-cart mode as the POS page. Both pages use
-         .add-to-cart-btn cards, #sidebar as the cart, and dispatch add-product,
-         so the script needs no per-page configuration. --}}
-    <script
-        src="{{ asset('assets/js/drag_to_cart.js') }}?v={{ filemtime(public_path('assets/js/drag_to_cart.js')) }}">
-    </script>
 
     {{-- Right-click a cart line for the wheel-driven quantity stepper. Both carts
          expose the same .ci-card[data-cart-index] rows and a set-qty

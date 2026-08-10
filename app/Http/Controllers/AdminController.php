@@ -25,10 +25,10 @@ class AdminController extends Controller
         $sql = Product::with(['warehouses' => function ($q) use ($warehouse_ids) {
             $q->whereIn('warehouse_id', $warehouse_ids);
         }]);
-        if (Auth::user()->role == 'admin' || Auth::user()->role == 'supervisor') {
-        } else {
-            $sql->whereIn('type', ['Product', 'Service']);
-        }
+        // Was: supervisors skipped the filter entirely and the values were
+        // capitalised ('Product'/'Service'), matching only by luck of a
+        // case-insensitive collation. See Product::scopeSellableForCurrentUser.
+        $sql->sellableForCurrentUser();
         $sql->where('status', 1);
         $products =  $sql->get();
 
@@ -118,15 +118,7 @@ class AdminController extends Controller
         $sql = Product::with(['warehouses' => function ($q) use ($warehouse_ids) {
             $q->whereIn('warehouse_id', $warehouse_ids);
         }]);
-        // Non-admins get sellable items only — goods AND services. The filter
-        // used to be type = 'Product', which silently hid every service from
-        // cashiers: the delivery fee simply was not on their screen, and it
-        // looked like service items "disappeared" depending on who was logged
-        // in. 'expence' stays excluded here; those belong to the expense flow,
-        // not the sales grid.
-        if (Auth::user()->role !== 'admin') {
-            $sql->whereIn('type', ['product', 'service']);
-        }
+        $sql->sellableForCurrentUser();
         $sql->where('status', 1);
         $products =  $sql->get();
 

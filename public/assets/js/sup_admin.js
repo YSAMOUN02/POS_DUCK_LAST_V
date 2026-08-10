@@ -1,4 +1,9 @@
-if(user_role === "admin"  || user_role === "supervisor"  ){
+// Same fix as admin.js: the stock-adjustment UI is rendered on
+// hasPermission('warehouse.adjustment'), not on role, so a cashier granted that
+// permission got the modal markup with none of the code that drives it.
+// Authorization stays server-side (Cart::stockAdjustment re-checks the
+// warehouse ids and the route carries the permission middleware).
+{
 (function () {
     const $   = (s, r = document) => r.querySelector(s);
     const esc = (s) => String(s ?? '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
