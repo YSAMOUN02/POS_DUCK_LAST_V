@@ -796,6 +796,11 @@
         document.getElementById("edit_email").value = user.email || "";
         document.getElementById("edit_password").value = "";
         document.getElementById("edit_status").checked = Number(user.status) === 1;
+
+        // Which letterhead this user's printed documents carry. Lives in
+        // script.js because the profile editor does; absent for non-admins,
+        // whose form has no Print Profile row.
+        window.refreshPrintProfileSummary?.(user.id);
     }
 
     async function openEditUser() {

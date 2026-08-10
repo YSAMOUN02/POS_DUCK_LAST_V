@@ -70,13 +70,19 @@ class PosProfileController extends Controller
 
         $owned = PosProfile::pluck('company', 'user_report');
 
+        $house = $owned['0'] ?? null;
+
         $users = \App\Models\User::orderBy('username')
-            ->get(['id', 'username'])
+            ->get(['id', 'username', 'role'])
             ->map(fn($u) => [
                 'user_report' => (string) $u->id,
                 'username'    => $u->username,
+                'role'        => $u->role,
                 'company'     => $owned[(string) $u->id] ?? null,
                 'has_own'     => isset($owned[(string) $u->id]),
+                // What their documents actually print today, so the manage
+                // list shows the effective letterhead, not just the gap.
+                'effective'   => $owned[(string) $u->id] ?? $house,
             ]);
 
         return response()->json([

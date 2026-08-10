@@ -1270,15 +1270,149 @@ function closeManageBinsModal() {
 }
 
 // ---- Company Profile (pos_profiles) settings ----
-async function openPosProfileModal() {
+// targetUserReport: '0' for the shared House profile, or a user id. Omitted
+// when opened from the menu, in which case the picker keeps its own value.
+async function openPosProfileModal(targetUserReport = null) {
     const modal = document.getElementById("posProfileModal");
     if (!modal) return;
     modal.classList.remove("hidden");
     modal.classList.add("flex");
 
     await populatePosProfileUsers();
-    await loadPosProfileInto(document.getElementById("pp-user-report")?.value);
+
+    // Opened from the user form with a target, or plain from the menu.
+    const sel = document.getElementById("pp-user-report");
+    if (sel && targetUserReport != null && targetUserReport !== "") {
+        sel.value = String(targetUserReport);
+    }
+    await loadPosProfileInto(sel?.value);
 }
+
+/**
+ * Open the letterhead editor for the user currently being edited.
+ *
+ * The profile belongs to the user (pos_profiles.user_report = their id), so
+ * this is the same editor, just pre-targeted — no separate copy of the form.
+ */
+async function openPrintProfileForEditedUser() {
+    const id = document.getElementById("edit_user_id")?.value;
+    if (!id) return;
+    await openPosProfileModal(id);
+}
+window.openPrintProfileForEditedUser = openPrintProfileForEditedUser;
+
+// Local escaper: the other escapeHtml() in this file is declared inside a
+// block further down, so reaching it from here would rely on Annex B hoisting.
+function escProfile(s) {
+    return String(s ?? "").replace(
+        /[&<>"']/g,
+        (c) =>
+            ({
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+            })[c],
+    );
+}
+
+/**
+ * Manage print profiles: every user and the letterhead they print under.
+ *
+ * There is no separate "create" flow — a profile IS a user's row
+ * (pos_profiles.user_report), so Create and Edit are the same action: open the
+ * editor targeted at that user. The list exists to show, at a glance, who is
+ * still falling back to House.
+ */
+async function openManageProfilesModal() {
+    const modal = document.getElementById("manageProfilesModal");
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+    await loadManageProfiles();
+}
+window.openManageProfilesModal = openManageProfilesModal;
+
+function closeManageProfilesModal() {
+    const modal = document.getElementById("manageProfilesModal");
+    if (!modal) return;
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+}
+window.closeManageProfilesModal = closeManageProfilesModal;
+
+async function loadManageProfiles() {
+    const body = document.getElementById("manageProfilesBody");
+    if (!body) return;
+
+    try {
+        const res = await fetch("/pos-profile/assignable");
+        if (!res.ok) {
+            body.innerHTML = `<tr><td colspan="4" class="px-3 py-6 text-center text-rose-500">
+                                  Not permitted</td></tr>`;
+            return;
+        }
+        const data = await res.json();
+
+        const row = (r, isHouse) => `
+            <tr class="hover:bg-slate-50">
+                <td class="px-3 py-2 font-medium">${escProfile(r.username)}</td>
+                <td class="px-3 py-2 text-slate-500">${isHouse ? "—" : escProfile(r.role ?? "")}</td>
+                <td class="px-3 py-2">
+                    ${
+                        r.has_own
+                            ? `<span class="font-medium">${escProfile(r.company || "(no company name)")}</span>`
+                            : `<span class="text-slate-400">${escProfile(r.effective || "(none)")}</span>
+                               <span class="ml-1 rounded-full bg-amber-100 text-amber-700 px-2 py-0.5 text-[11px] font-semibold">House</span>`
+                    }
+                </td>
+                <td class="px-3 py-2 text-center">
+                    <button type="button"
+                        onclick="closeManageProfilesModal(); openPosProfileModal('${r.user_report}')"
+                        class="px-2.5 py-1 rounded-lg text-xs font-semibold border transition
+                               ${
+                                   r.has_own
+                                       ? "bg-sky-50 text-sky-700 border-sky-200 hover:bg-sky-100"
+                                       : "bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100"
+                               }">
+                        <i class="fa-solid ${r.has_own ? "fa-pen" : "fa-plus"} mr-1"></i>
+                        ${r.has_own ? "Edit" : "Create"}
+                    </button>
+                </td>
+            </tr>`;
+
+        body.innerHTML =
+            row(data.house, true) + (data.users || []).map((u) => row(u, false)).join("");
+    } catch (err) {
+        console.error(err);
+        body.innerHTML = `<tr><td colspan="4" class="px-3 py-6 text-center text-rose-500">
+                              Failed to load</td></tr>`;
+    }
+}
+
+/** Badge on the user form showing which letterhead that user prints under. */
+async function refreshPrintProfileSummary(userId) {
+    const el = document.getElementById("printProfileSummary_edit");
+    if (!el || !userId) return;
+
+    try {
+        const res = await fetch(
+            `/pos-profile?user_report=${encodeURIComponent(userId)}`,
+        );
+        if (!res.ok) return;
+        const p = await res.json();
+
+        el.textContent = p.has_own_profile
+            ? p.company || "(no company name)"
+            : "House (default)";
+        el.classList.toggle("bg-sky-100", !!p.has_own_profile);
+        el.classList.toggle("text-sky-700", !!p.has_own_profile);
+    } catch (err) {
+        console.error(err);
+    }
+}
+window.refreshPrintProfileSummary = refreshPrintProfileSummary;
 
 /**
  * Fill the admin-only "Profile for" picker.
