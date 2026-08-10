@@ -18,14 +18,16 @@
          cached for 30 days (public/web.config), so an unstamped URL would pin a
          stale copy in every cashier's browser until they cleared it by hand. --}}
     <link rel="stylesheet"
-        href="{{ URL('assets/css/fonts6/css/all.css') }}?v={{ filemtime(public_path('assets/css/fonts6/css/all.css')) }}">
+        href="{{ \App\Services\Asset::v('assets/css/fonts6/css/all.css') }}">
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <link rel="shortcut icon"
-        href="{{ asset('assets/icon/download.jpg') }}?v={{ filemtime(public_path('assets/icon/download.jpg')) }}"
+        {{-- Capital I: the repo tracks public/assets/Icon/. Windows resolved the
+             lowercase spelling anyway, Linux does not. --}}
+        href="{{ \App\Services\Asset::v('assets/Icon/download.jpg') }}"
         type="image/x-icon">
     <link rel="stylesheet"
-        href="{{ asset('assets/css/style.css') }}?v={{ filemtime(public_path('assets/css/style.css')) }}">
+        href="{{ \App\Services\Asset::v('assets/css/style.css') }}">
 
 
     {{-- Google Font  --}}
@@ -35,9 +37,9 @@
 
     <livewire:styles />
     <script
-        src="{{ asset('assets/js/html2canvas.min.js') }}?v={{ filemtime(public_path('assets/js/html2canvas.min.js')) }}">
+        src="{{ \App\Services\Asset::v('assets/js/html2canvas.min.js') }}">
     </script>
-    <script src="{{ asset('assets/js/qz-tray.js') }}?v={{ filemtime(public_path('assets/js/qz-tray.js')) }}"></script>
+    <script src="{{ \App\Services\Asset::v('assets/js/qz-tray.js') }}"></script>
     <title>POS System</title>
 </head>
 
@@ -591,39 +593,39 @@
 
         document.addEventListener('scroll', () => infoPopup.classList.remove('show'), true);
     </script>
-    <script src="{{ asset('assets/js/flowbite.min.js') }}?v={{ filemtime(public_path('assets/js/flowbite.min.js')) }}">
+    <script src="{{ \App\Services\Asset::v('assets/js/flowbite.min.js') }}">
     </script>
     <script
-        src="{{ asset('assets/js/html2pdf.bundle.min.js') }}?v={{ filemtime(public_path('assets/js/html2pdf.bundle.min.js')) }}">
+        src="{{ \App\Services\Asset::v('assets/js/html2pdf.bundle.min.js') }}">
     </script>
     {{-- <script src="https://cdn.jsdelivr.net/npm/flowbite@4.0.1/dist/flowbite.min.js"></script> --}}
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     {{-- <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script> --}}
-    <script src="{{ asset('assets/js/script.js') }}?v={{ filemtime(public_path('assets/js/script.js')) }}"></script>
-    <script src="{{ asset('assets/js/admin.js') }}?v={{ filemtime(public_path('assets/js/admin.js')) }}"></script>
+    <script src="{{ \App\Services\Asset::v('assets/js/script.js') }}"></script>
+    <script src="{{ \App\Services\Asset::v('assets/js/admin.js') }}"></script>
     {{-- Was cache-busted with admin.js's timestamp, so any change to
          sup_admin.js alone shipped behind a stale cached copy. --}}
-    <script src="{{ asset('assets/js/sup_admin.js') }}?v={{ filemtime(public_path('assets/js/sup_admin.js')) }}"></script>
+    <script src="{{ \App\Services\Asset::v('assets/js/sup_admin.js') }}"></script>
 
 
     <script
-        src="{{ asset('assets/js/print_thermal_receipt.js') }}?v={{ filemtime(public_path('assets/js/print_thermal_receipt.js')) }}">
+        src="{{ \App\Services\Asset::v('assets/js/print_thermal_receipt.js') }}">
     </script>
 
     <script
-        src="{{ asset('assets/js/print_document_a4.js') }}?v={{ filemtime(public_path('assets/js/print_document_a4.js')) }}">
+        src="{{ \App\Services\Asset::v('assets/js/print_document_a4.js') }}">
     </script>
 
 
     {{-- Right-click a cart line for a wheel-driven quantity stepper. --}}
     <script
-        src="{{ asset('assets/js/qty_stepper.js') }}?v={{ filemtime(public_path('assets/js/qty_stepper.js')) }}">
+        src="{{ \App\Services\Asset::v('assets/js/qty_stepper.js') }}">
     </script>
 
     {{-- Horizontal drag divider under the product grid — the height counterpart
          to the vertical #resizer that sets the cart width. --}}
     <script
-        src="{{ asset('assets/js/grid_resizer.js') }}?v={{ filemtime(public_path('assets/js/grid_resizer.js')) }}">
+        src="{{ \App\Services\Asset::v('assets/js/grid_resizer.js') }}">
     </script>
 
 </body>

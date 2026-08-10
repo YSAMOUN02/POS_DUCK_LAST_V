@@ -14,13 +14,15 @@
         crossorigin="anonymous" referrerpolicy="no-referrer" />
     {{-- ?v=<filemtime> on every local asset: static files are cached for 30 days
          (public/web.config), so an unstamped URL would pin a stale copy. --}}
-    <script src="{{ asset('assets/js/qz-tray.js') }}?v={{ filemtime(public_path('assets/js/qz-tray.js')) }}"></script>
+    <script src="{{ \App\Services\Asset::v('assets/js/qz-tray.js') }}"></script>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <link rel="shortcut icon"
-        href="{{ asset('assets/icon/download.jpg') }}?v={{ filemtime(public_path('assets/icon/download.jpg')) }}"
+        {{-- Capital I — see backend/master.blade.php: the repo tracks
+             public/assets/Icon/, and Linux is case-sensitive. --}}
+        href="{{ \App\Services\Asset::v('assets/Icon/download.jpg') }}"
         type="image/x-icon">
     <link rel="stylesheet"
-        href="{{ asset('assets/css/style.css') }}?v={{ filemtime(public_path('assets/css/style.css')) }}">
+        href="{{ \App\Services\Asset::v('assets/css/style.css') }}">
 
     {{-- Google Font  --}}
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -286,13 +288,13 @@
     <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <script
-        src="{{ asset('assets/js/script_purchase.js') }}?v={{ filemtime(public_path('assets/js/script_purchase.js')) }}">
+        src="{{ \App\Services\Asset::v('assets/js/script_purchase.js') }}">
     </script>
     <script
-        src="{{ asset('assets/js/print_document_a4.js') }}?v={{ filemtime(public_path('assets/js/print_document_a4.js')) }}">
+        src="{{ \App\Services\Asset::v('assets/js/print_document_a4.js') }}">
     </script>
     <script
-        src="{{ asset('assets/js/print_purchase.js') }}?v={{ filemtime(public_path('assets/js/print_purchase.js')) }}">
+        src="{{ \App\Services\Asset::v('assets/js/print_purchase.js') }}">
     </script>
 
 
@@ -300,13 +302,13 @@
          expose the same .ci-card[data-cart-index] rows and a set-qty
          listener, so the script is shared verbatim. --}}
     <script
-        src="{{ asset('assets/js/qty_stepper.js') }}?v={{ filemtime(public_path('assets/js/qty_stepper.js')) }}">
+        src="{{ \App\Services\Asset::v('assets/js/qty_stepper.js') }}">
     </script>
 
     {{-- Horizontal drag divider under the product grid. Both screens render
          #mainContent with a scrolling #tab-content, so this is shared verbatim. --}}
     <script
-        src="{{ asset('assets/js/grid_resizer.js') }}?v={{ filemtime(public_path('assets/js/grid_resizer.js')) }}">
+        src="{{ \App\Services\Asset::v('assets/js/grid_resizer.js') }}">
     </script>
 </body>
 
