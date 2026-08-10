@@ -6737,6 +6737,14 @@ async function fetchSaleOrderForPrint(id) {
     return res.json();
 }
 
+// Letterhead for a document that already exists: the server resolves it from
+// the user who ISSUED the invoice, so a reprint keeps the original profile.
+// pos_profile_for_print is the SIGNED-IN user's profile — only correct for a
+// document being created right now, and the wrong answer for every reprint.
+function docProfile(data) {
+    return data?.posInfo ?? pos_profile_for_print;
+}
+
 async function printSelectedSaleOrderInvoice() {
     if (!selectedSaleOrderId) {
         showToast({ message: "Please select a sale order first", type: "error" });
@@ -6746,7 +6754,7 @@ async function printSelectedSaleOrderInvoice() {
 
     try {
         const data = await fetchSaleOrderForPrint(selectedSaleOrderId);
-        await printInvoiceA4(data.header, data.lines, pos_profile_for_print);
+        await printInvoiceA4(data.header, data.lines, docProfile(data));
     } catch (err) {
         console.error(err);
         showToast({ message: "Failed to print invoice", type: "error" });
@@ -6762,7 +6770,7 @@ async function printSelectedSaleOrderDeliveryNote() {
 
     try {
         const data = await fetchSaleOrderForPrint(selectedSaleOrderId);
-        await printDeliveryNoteA4(data.header, data.lines, pos_profile_for_print);
+        await printDeliveryNoteA4(data.header, data.lines, docProfile(data));
     } catch (err) {
         console.error(err);
         showToast({ message: "Failed to print delivery note", type: "error" });
@@ -6778,7 +6786,7 @@ async function printSelectedSaleOrderPickingList() {
         const res = await fetch(`/picking-list-data/${selectedSaleOrderId}`);
         if (!res.ok) throw new Error(res.status);
         const data = await res.json();
-        await printPickingListA4(data.header, data.rows, pos_profile_for_print);
+        await printPickingListA4(data.header, data.rows, docProfile(data));
     } catch (err) {
         console.error(err);
         showToast({ message: "Failed to load picking list", type: "error" });
@@ -6794,7 +6802,7 @@ async function printSelectedSaleOrderReceipt() {
 
     try {
         const data = await fetchSaleOrderForPrint(selectedSaleOrderId);
-        await print_document_v2("Invoice", data.header, pos_profile_for_print, data.lines);
+        await print_document_v2("Invoice", data.header, docProfile(data), data.lines);
     } catch (err) {
         console.error(err);
         showToast({ message: "Failed to print receipt", type: "error" });
@@ -6947,17 +6955,18 @@ async function printSaleOrderDataAs(kind) {
         return;
     }
     const { header, lines } = currentSaleOrderData;
+    const posInfo = docProfile(currentSaleOrderData);
 
     try {
         if (kind === "invoice") {
-            await printInvoiceA4(header, lines, pos_profile_for_print);
+            await printInvoiceA4(header, lines, posInfo);
         } else if (kind === "delivery") {
-            await printDeliveryNoteA4(header, lines, pos_profile_for_print);
+            await printDeliveryNoteA4(header, lines, posInfo);
         } else if (kind === "receipt") {
             if (!(await askPrintConfirm("Print receipt now?"))) return;
-            await print_document_v2("Invoice", header, pos_profile_for_print, lines);
+            await print_document_v2("Invoice", header, posInfo, lines);
         } else if (kind === "table") {
-            await printSaleOrderFullTableA4(header, lines, pos_profile_for_print);
+            await printSaleOrderFullTableA4(header, lines, posInfo);
         } else if (kind === "picking") {
             // The picking list is lot-level, so it comes from its own endpoint
             // rather than the header/lines already loaded into this modal.
@@ -6967,7 +6976,7 @@ async function printSaleOrderDataAs(kind) {
             });
             if (!res.ok) throw new Error(`picking list request failed (${res.status})`);
             const data = await res.json();
-            await printPickingListA4(data.header, data.rows, pos_profile_for_print);
+            await printPickingListA4(data.header, data.rows, docProfile(data));
         }
     } catch (err) {
         console.error(err);

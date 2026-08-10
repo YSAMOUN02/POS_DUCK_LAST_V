@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Concerns\ResolvesPrintProfile;
 use App\Concerns\ScopesVisibilityByRole;
 use App\Models\SaleOrderHeader;
 use Illuminate\Http\Request;
@@ -29,6 +30,7 @@ use PhpOffice\PhpSpreadsheet\Chart\Layout;
 class SaleOrderController extends Controller
 {
     use ScopesVisibilityByRole;
+    use ResolvesPrintProfile;
 
 
 /**
@@ -188,7 +190,12 @@ public function getSaleOrders(Request $request)
                 'remarks' => $saleOrder->remarks,
                 'created_by' => $saleOrder->created_by,
             ],
-            'lines' => $lines
+            'lines' => $lines,
+            // Letterhead of whoever ISSUED the invoice for this order. Every
+            // print launched from the sale-order screens used the global
+            // pos_profile_for_print instead, which is the profile of whoever is
+            // signed in — so reprinting someone else's invoice rebranded it.
+            'posInfo' => $this->saleDocProfile($saleOrder),
         ]);
     }
 
@@ -220,6 +227,7 @@ public function getSaleOrders(Request $request)
                 'created_by' => $saleOrder->created_by,
             ],
             'rows' => $rows,
+            'posInfo' => $this->saleDocProfile($saleOrder),
         ]);
     }
 
