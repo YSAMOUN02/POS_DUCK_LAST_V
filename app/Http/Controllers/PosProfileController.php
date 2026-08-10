@@ -18,13 +18,76 @@ class PosProfileController extends Controller
         return PosProfile::forUser(Auth::id());
     }
 
-    public function show()
+    /**
+     * Which pos_profiles.user_report row this request is editing.
+     *
+     * '0' is the shared house profile everyone falls back to. Any other value
+     * is a user id. Only an admin may target someone else's row (or the house
+     * row); everyone else can only ever edit their own letterhead.
+     *
+     * No new column: user_report already carries this.
+     */
+    private function targetKey(Request $request): string
     {
-        $profile = $this->resolveProfile();
+        $asked = $request->input('user_report');
+
+        if (Auth::user()?->role === 'admin' && $asked !== null && $asked !== '') {
+            return (string) $asked;
+        }
+
+        return (string) Auth::id();
+    }
+
+    public function show(Request $request)
+    {
+        // Admin can load any user's row (or the house row) to edit it; the
+        // fallback chain still applies when that user has none saved yet, so
+        // the form opens pre-filled rather than blank.
+        $asked = $request->input('user_report');
+
+        if (Auth::user()?->role === 'admin' && $asked !== null && $asked !== '') {
+            $profile = PosProfile::where('user_report', (string) $asked)->first()
+                ?? PosProfile::forUser($asked);
+            $ownRow = PosProfile::where('user_report', (string) $asked)->exists();
+        } else {
+            $profile = $this->resolveProfile();
+            $ownRow = PosProfile::where('user_report', (string) Auth::id())->exists();
+        }
+
         $data = $profile ? $profile->toArray() : [];
         $data['logo_url'] = self::logoUrl();
+        // Lets the form say "this user has no profile of their own yet — saving
+        // will create one" instead of looking like it is editing an existing.
+        $data['has_own_profile'] = $ownRow;
 
         return response()->json($data);
+    }
+
+    /** Users an admin can assign a print profile to, plus the house row. */
+    public function assignableProfiles()
+    {
+        abort_unless(Auth::user()?->role === 'admin', 403);
+
+        $owned = PosProfile::pluck('company', 'user_report');
+
+        $users = \App\Models\User::orderBy('username')
+            ->get(['id', 'username'])
+            ->map(fn($u) => [
+                'user_report' => (string) $u->id,
+                'username'    => $u->username,
+                'company'     => $owned[(string) $u->id] ?? null,
+                'has_own'     => isset($owned[(string) $u->id]),
+            ]);
+
+        return response()->json([
+            'house' => [
+                'user_report' => '0',
+                'username'    => 'House (default for everyone)',
+                'company'     => $owned['0'] ?? null,
+                'has_own'     => isset($owned['0']),
+            ],
+            'users' => $users,
+        ]);
     }
 
     public function update(Request $request)
@@ -49,16 +112,21 @@ class PosProfileController extends Controller
             unset($data['customer_name']);
         }
 
-        // Update the shared profile in place if one already exists, rather
-        // than forking off a second row keyed to whoever happens to be
-        // editing — otherwise every non-owning editor would silently create
-        // their own separate (and now out-of-sync) company profile.
-        $target = $this->resolveProfile();
-        if ($target) {
-            $target->update($data);
-            $profile = $target;
+        // Target an EXACT user_report row, never whatever the fallback chain
+        // happened to resolve to.
+        //
+        // This previously saved onto resolveProfile(), which for anyone without
+        // their own row returns the shared house profile — so a user editing
+        // "their" letterhead silently rebranded every other user who also falls
+        // back to it. That is why one profile appeared on almost every invoice.
+        $key = $this->targetKey($request);
+
+        $profile = PosProfile::where('user_report', $key)->first();
+
+        if ($profile) {
+            $profile->update($data);
         } else {
-            $profile = PosProfile::create($data + ['user_report' => Auth::id()]);
+            $profile = PosProfile::create($data + ['user_report' => $key]);
         }
 
         $profileData = $profile->toArray();

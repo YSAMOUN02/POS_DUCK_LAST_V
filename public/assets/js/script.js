@@ -1276,10 +1276,60 @@ async function openPosProfileModal() {
     modal.classList.remove("hidden");
     modal.classList.add("flex");
 
+    await populatePosProfileUsers();
+    await loadPosProfileInto(document.getElementById("pp-user-report")?.value);
+}
+
+/**
+ * Fill the admin-only "Profile for" picker.
+ *
+ * Printed documents use the profile of whoever ISSUED them, so a user with no
+ * row of their own falls back to House — which is why one letterhead appeared
+ * on nearly every invoice. This is where an admin gives someone their own.
+ */
+async function populatePosProfileUsers() {
+    const sel = document.getElementById("pp-user-report");
+    if (!sel || sel.dataset.filled === "1") return;
+
     try {
-        const res = await fetch("/pos-profile");
+        const res = await fetch("/pos-profile/assignable");
+        if (!res.ok) return; // non-admin: picker is not rendered anyway
+        const data = await res.json();
+
+        sel.innerHTML = "";
+        const add = (row) => {
+            const o = document.createElement("option");
+            o.value = row.user_report;
+            o.textContent = row.has_own
+                ? `${row.username} — ${row.company || "(no company name)"}`
+                : `${row.username} — no profile yet`;
+            sel.appendChild(o);
+        };
+
+        add(data.house);
+        (data.users || []).forEach(add);
+        sel.dataset.filled = "1";
+
+        sel.addEventListener("change", () => loadPosProfileInto(sel.value));
+    } catch (err) {
+        console.error(err);
+    }
+}
+
+/** Load one user_report row into the form ('0' = the shared house profile). */
+async function loadPosProfileInto(userReport) {
+    try {
+        const qs = userReport ? `?user_report=${encodeURIComponent(userReport)}` : "";
+        const res = await fetch(`/pos-profile${qs}`);
         const profile = res.ok ? await res.json() : null;
         const p = profile || {};
+
+        const hint = document.getElementById("pp-user-hint");
+        if (hint) {
+            hint.textContent = p.has_own_profile
+                ? "Editing this profile."
+                : "No profile of their own yet — saving will create one. Fields are pre-filled from the House profile.";
+        }
 
         document.getElementById("pp-company").value = p.company ?? "";
         document.getElementById("pp-address1").value = p.address1 ?? "";
@@ -1429,6 +1479,9 @@ async function savePosProfile() {
         social: document.getElementById("pp-social").value.trim(),
         seller: document.getElementById("pp-seller").value.trim(),
         description: document.getElementById("pp-description").value.trim(),
+        // Admin-only picker; absent for everyone else, in which case the server
+        // saves onto the caller's own row rather than the shared house profile.
+        user_report: document.getElementById("pp-user-report")?.value,
     };
 
     try {

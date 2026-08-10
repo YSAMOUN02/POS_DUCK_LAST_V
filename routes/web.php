@@ -104,6 +104,8 @@ Route::middleware(['auth'])->group(function () {
 
     // Company / print profile
     Route::get('/pos-profile', [PosProfileController::class, 'show'])->middleware('permission:company_profile.view');
+    // Admin-only: the list of users a print profile can be assigned to.
+    Route::get('/pos-profile/assignable', [PosProfileController::class, 'assignableProfiles'])->middleware('permission:company_profile.view');
     Route::post('/pos-profile', [PosProfileController::class, 'update'])->middleware('permission:company_profile.edit');
     Route::post('/pos-profile/logo', [PosProfileController::class, 'uploadLogo'])->middleware('permission:company_profile.edit');
     Route::delete('/pos-profile/logo', [PosProfileController::class, 'removeLogo'])->middleware('permission:company_profile.edit');
