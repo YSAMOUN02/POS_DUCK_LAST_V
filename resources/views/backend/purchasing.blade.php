@@ -1647,12 +1647,15 @@
 
         <div class="modal-card-alert space-y-4">
 
+            {{-- Preview opens this same modal with the posting half switched off:
+                 the title changes and Confirm is swapped for Preview, so nothing
+                 on screen offers to receive stock. --}}
             <h2 class="text-xl font-bold">
-                Confirm Purchase
+                <span id="grnModalTitle">Confirm Purchase</span>
                 <span class="text-sm text-gray-500">(GRN Date)</span>
             </h2>
 
-            <p class="text-gray-600">
+            <p class="text-gray-600" id="grnModalSubtitle">
                 Please select GRN date before posting purchase
             </p>
 
@@ -1670,7 +1673,11 @@
                     Cancel
                 </button>
 
-                <button onclick="confirmGrn()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl transition">
+                <button id="grnPreviewBtn" onclick="confirmGrnPreview()" class="hidden bg-slate-600 hover:bg-slate-700 text-white px-4 py-2 rounded-xl transition">
+                    <i class="fa-solid fa-eye mr-1"></i> Preview
+                </button>
+
+                <button id="grnConfirmBtn" onclick="confirmGrn()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl transition">
                     Confirm
                 </button>
 

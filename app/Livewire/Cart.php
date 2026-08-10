@@ -2521,7 +2521,31 @@ class Cart extends Component
             cart: $this->cart,
             totals: $this->totals,
             factor: $this->factor,
-            currency: $this->currency
+            currency: $this->currency,
+            previewOnly: false,
+        );
+    }
+
+    /**
+     * The same modal the Quote button opens, minus the quotation.
+     *
+     * Preview used to print straight from the cart bar, so there was nowhere to
+     * put the customer name or remark that the printed document shows. It now
+     * opens the identical modal — same customer fields, same line table, same
+     * totals — with the Save Quotation button hidden and the title reading
+     * Preview, so nothing about it offers to issue a document.
+     *
+     * Needs no permission, same as previewQuotation(): nothing is written.
+     */
+    public function openDocumentPreview()
+    {
+        $this->dispatch(
+            'open-quotation-preview',
+            cart: $this->cart,
+            totals: $this->totals,
+            factor: $this->factor,
+            currency: $this->currency,
+            previewOnly: true,
         );
     }
 

@@ -938,7 +938,20 @@ const today = todayLocal();
 
 document.getElementById("grnDate").value = today;
 
-function openGrnModal() {
+// The GRN modal serves both actions. Preview shows the same date field and the
+// same cart, but swaps Confirm for Preview so nothing on screen can post stock.
+function setGrnModalMode(previewOnly) {
+    document.getElementById("grnModalTitle").textContent = previewOnly
+        ? "Preview"
+        : "Confirm Purchase";
+    document.getElementById("grnModalSubtitle").textContent = previewOnly
+        ? "Preview this cart — nothing is posted"
+        : "Please select GRN date before posting purchase";
+    document.getElementById("grnConfirmBtn").classList.toggle("hidden", previewOnly);
+    document.getElementById("grnPreviewBtn").classList.toggle("hidden", !previewOnly);
+}
+
+function showGrnModal(previewOnly) {
     let count_cart_input = document.querySelector("#count_cart_input");
 
     if (count_cart_input.value == 0) {
@@ -948,7 +961,17 @@ function openGrnModal() {
         });
         return;
     }
+
+    setGrnModalMode(previewOnly);
     document.getElementById("grnModal").classList.remove("hidden");
+}
+
+function openGrnModal() {
+    showGrnModal(false);
+}
+
+function openGrnPreviewModal() {
+    showGrnModal(true);
 }
 
 function todayLocal() {
@@ -983,6 +1006,30 @@ function confirmGrn() {
     Livewire.find(
         document.querySelector("[wire\\:id]").getAttribute("wire:id"),
     ).call("post_grn");
+}
+
+// Same date handling as confirmGrn, but calls previewPurchase — which writes
+// nothing and prints the cart — and closes the modal itself, since there is no
+// posted document to report back.
+function confirmGrnPreview() {
+    const date = document.getElementById("grnDate").value;
+
+    if (!date) {
+        showToast({
+            message: "សូមជ្រើសរើស ថ្ងៃ ខែ​ ឆ្នាំ",
+            type: "error",
+        });
+        return;
+    }
+
+    const component = Livewire.find(
+        document.querySelector("[wire\\:id]").getAttribute("wire:id"),
+    );
+
+    component.set("grn_date", date);
+    component.call("previewPurchase");
+
+    closeGrnModal();
 }
 
 window.addEventListener("close-grn-modal", () => {

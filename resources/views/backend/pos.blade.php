@@ -5374,7 +5374,8 @@
                         <i class="fa-solid fa-file-lines"></i>
                         <span id="quotation-modal-title">Save Quotation</span>
                     </h2>
-                    <p class="text-sm text-slate-300">Create or edit a quotation for a customer</p>
+                    <p id="quotation-modal-subtitle" class="text-sm text-slate-300">Create or edit a quotation for a
+                        customer</p>
                 </div>
 
                 <button type="button" onclick="closeQuotationModal()"

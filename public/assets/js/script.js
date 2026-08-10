@@ -7340,10 +7340,45 @@ function openCustomerCreateFor(context) {
     });
 })();
 
+// The Preview button opens this same modal with the quotation half switched
+// off. Remembering the title is what lets an edit ("Edit Quotation Q-12")
+// survive a preview and come back intact when the modal is reopened via Quote.
+let quotationModalTitleBeforePreview = null;
+
+function setQuotationModalMode(previewOnly) {
+    const title = document.getElementById("quotation-modal-title");
+    const subtitle = document.getElementById("quotation-modal-subtitle");
+    const saveBtn = document.getElementById("btn-save-quotation");
+
+    if (previewOnly) {
+        if (quotationModalTitleBeforePreview === null) {
+            quotationModalTitleBeforePreview = title.textContent;
+        }
+        title.textContent = "Preview";
+        if (subtitle) subtitle.textContent = "Preview this cart — nothing is saved";
+        saveBtn?.classList.add("hidden");
+        return;
+    }
+
+    if (quotationModalTitleBeforePreview !== null) {
+        title.textContent = quotationModalTitleBeforePreview;
+        quotationModalTitleBeforePreview = null;
+    }
+    if (subtitle) subtitle.textContent = "Create or edit a quotation for a customer";
+    saveBtn?.classList.remove("hidden");
+}
+
 window.addEventListener("open-quotation-preview", (event) => {
+    const previewOnly = event.detail.previewOnly === true;
+    setQuotationModalMode(previewOnly);
+
+    // Preview leaves the fields exactly as the user left them — whatever is
+    // typed is what the printed preview says — so only the quotation path
+    // resets them.
+    //
     // Only reset to "new quotation" mode if no quotation is currently loaded
     // for editing (loadQuotationToCartUI already filled these fields).
-    if (!document.getElementById("quotation_id").value) {
+    if (!previewOnly && !document.getElementById("quotation_id").value) {
         document.getElementById("quotation-customer-id").value = "";
         document.getElementById("quotation-customer-search").value = "";
         document.getElementById("quotation-customer-name").value = "";
