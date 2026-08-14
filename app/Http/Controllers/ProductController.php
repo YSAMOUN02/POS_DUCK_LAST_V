@@ -296,6 +296,42 @@ class ProductController extends Controller
         }
     }
 
+/**
+ * Next free code in a prefixed series, e.g. FG-0023 -> FG-0024.
+ *
+ * Only a suggestion: the field stays editable, and store() still enforces
+ * uniqueness, so if two people open the form at once the second save is
+ * rejected rather than silently colliding.
+ *
+ * Width comes from the widest existing number, so FG-0009 rolls to FG-0010
+ * rather than FG-010.
+ */
+public function nextCode(Request $request)
+{
+    $prefix = trim((string) $request->query('prefix', 'FG-'));
+
+    if ($prefix === '') {
+        return response()->json(['prefix' => '', 'code' => '']);
+    }
+
+    $max = 0;
+    $width = 4;
+
+    foreach (Product::where('code', 'like', $prefix . '%')->pluck('code') as $code) {
+        // Only trailing digits directly after the prefix count — a code like
+        // FG-RAW01 is not part of the numeric series.
+        if (preg_match('/^' . preg_quote($prefix, '/') . '(\d+)$/', (string) $code, $m)) {
+            $max   = max($max, (int) $m[1]);
+            $width = max($width, strlen($m[1]));
+        }
+    }
+
+    return response()->json([
+        'prefix' => $prefix,
+        'code'   => $prefix . str_pad((string) ($max + 1), $width, '0', STR_PAD_LEFT),
+    ]);
+}
+
 public function searchByCategory(Request $request)
     {
         $query = trim($request->input('query', ''));

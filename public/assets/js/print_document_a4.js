@@ -148,24 +148,38 @@ html, body {
     margin-bottom: 6px;
 }
 
-.a4-meta-row {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
+/* One grid for ALL meta rows, not a flex row per line.
+ *
+ * Each row used to be its own right-aligned flex box, so a row's label started
+ * wherever its own value left room — "Date / PO No / Warehouse / Created By"
+ * each began at a different x and the colons zig-zagged. As one grid, the label
+ * column is sized once to the widest label, so every colon and every value line
+ * up on a single edge. */
+.a4-meta-grid {
+    display: grid;
+    grid-template-columns: max-content auto;
+    column-gap: 8px;
+    row-gap: 1px;
     font-size: 11.5px;
     line-height: 1.6;
+    /* The block still hugs the right of the page; only its contents are
+       column-aligned, which is what makes the list read as a table. */
+    justify-content: end;
+    text-align: left;
 }
 
 .a4-meta-label {
     color: #6b7280;
     font-weight: 600;
-    min-width: 80px;
-    text-align: left;
 }
 
 .a4-meta-value {
     font-weight: 700;
     color: #111827;
+    /* A long warehouse name wraps under itself instead of pushing the value
+       column wider and dragging the labels off to the left. */
+    max-width: 200px;
+    overflow-wrap: break-word;
 }
 
 .a4-bill-to {
@@ -275,12 +289,12 @@ function buildA4Letterhead(posInfo, docTitle, docNoLabel, docNo, extraMetaRows =
             </div>
             <div class="a4-doc-meta">
                 <div class="a4-doc-title">${docTitle}</div>
-                ${metaRows.map(r => `
-                    <div class="a4-meta-row">
+                <div class="a4-meta-grid">
+                    ${metaRows.map(r => `
                         <span class="a4-meta-label">${r.label}</span>
                         <span class="a4-meta-value">: ${r.value}</span>
-                    </div>
-                `).join("")}
+                    `).join("")}
+                </div>
             </div>
         </div>
     `;
@@ -385,42 +399,6 @@ function buildA4PlainItemsTable(lines) {
 // =====================================================
 // QUOTATION (A4)
 // =====================================================
-async function printQuotationA4(header, lines, posInfo) {
-    header = header || {};
-    const shop = posInfo || {};
-
-    const contactLine = shop.phone1
-        ? `please contact us at ${shop.phone1}${shop.email ? ` or ${shop.email}` : ""}.`
-        : "please contact us using the information above.";
-
-    const html = `
-        ${style_a4_document}
-        <div class="a4-page">
-            ${buildA4Letterhead(posInfo, "Quotation", "Quotation", header.quotation_no, [
-                header.valid_until ? { label: "Due Date", value: fmtDateA4(header.valid_until) } : null,
-            ].filter(Boolean))}
-
-            ${buildA4BillTo("Quotation for:", header.customer_name, header.phone, header.address)}
-
-            ${buildA4PricedItemsTable(lines, header)}
-
-            <div class="a4-terms">
-                <div class="a4-terms-title">Terms and Conditions</div>
-                Delivery: 3 weeks upon receiving PO<br>
-                Payment: 100% upon work completion<br>
-                Warranty: 3 months with a new spare part replacement and service.
-                ${header.remarks ? `<br>Remark: ${header.remarks}` : ""}
-            </div>
-
-            <div class="a4-signoff">
-                If you have any questions concerning this quotation, ${contactLine}<br>
-                <div class="a4-thankyou">THANK YOU FOR YOUR BUSINESS!!</div>
-            </div>
-        </div>
-    `;
-
-    await printA4(html, header.quotation_no);
-}
 
 // =====================================================
 // INVOICE (A4) — built from a Sale Order
@@ -460,10 +438,11 @@ function buildKhmerInvoiceTable(header, lines) {
     const isService = (l) => (l.type ?? "product") === "service";
 
     // Services (delivery fee and the like) are charges, not stock. They are kept
-    // out of the numbered goods entirely and printed BELOW the Sub Total, so the
-    // column reads: goods subtotal, then each charge, then the grand total.
-    // Splitting also keeps the No. column sequential — the old code numbered by
-    // array index, so a service between two products made the goods read 1, 3.
+    // out of the numbered goods and printed between the goods and the Sub Total,
+    // so the column reads: goods, then each charge, then a Sub Total covering
+    // both. Splitting also keeps the No. column sequential — the old code
+    // numbered by array index, so a service between two products made the goods
+    // read 1, 3.
     const all = lines || [];
     const goods = all.filter((l) => !isService(l));
     const services = all.filter(isService);
@@ -478,14 +457,17 @@ function buildKhmerInvoiceTable(header, lines) {
                 <td style="text-align:right;">${m(lineTotalOf(l))}</td>
             </tr>`).join("");
 
-    // Merged cells, matching production: a service carries no unit/qty/price.
+    // Services print between the goods and Sub Total, in the same merged-cell
+    // shape as a total row (label spanning the description columns, amount on
+    // the right) — a service carries no unit/qty/price to show. Sitting above
+    // Sub Total means Sub Total covers everything listed above it, goods and
+    // services together, so the column adds up as read.
     const serviceRows = services.map((l) => `
                 <tr>
                     <td colspan="5" style="text-align:end; font-weight:bold;">${l.name ?? ""}</td>
                     <td style="text-align:right; font-weight:bold;">${m(lineTotalOf(l))}</td>
                 </tr>`).join("");
 
-    const servicesTotal = services.reduce((sum, l) => sum + Number(lineTotalOf(l) || 0), 0);
 
     const totalRow = (labelKh, value) => `
         <tr class="total_print">
@@ -520,10 +502,16 @@ function buildKhmerInvoiceTable(header, lines) {
         (discount !== 0 ? totalRow("បញ្ចុះតម្លៃ/Discount", discount) : "")
         + (vat > 0 ? totalRow(`អាករ/VAT ${vatPercent}%`, vat) : "");
 
-    // Grand Total always prints: it is the figure Deposit and Balance are
-    // measured against, so omitting it leaves those two unreconcilable.
+    // Sub Total and Grand Total always print — they are the two figures the
+    // customer checks, even when equal.
+    const subTotalRow = totalRow("សរុប/Sub Total", subTotal);
+
+    // Deposit and Balance only mean something once money has actually been
+    // taken. At deposit 0 the pair says "0" and then repeats Grand Total, which
+    // is what made a plain cash sale print the same number four times over.
+    // Fully paid documents already skip them via isPaid.
     const settlementRows = totalRow("សរុប /Grand Total", grand)
-        + (isPaid
+        + (isPaid || deposit <= 0
             ? ""
             : totalRow("កក់មុន/Deposit", deposit)
               + totalRow("នៅសល់/Balance", grand - deposit));
@@ -550,8 +538,8 @@ function buildKhmerInvoiceTable(header, lines) {
                 </thead>
                 <tbody>
                     ${body}
-                    ${totalRow("សរុប/Sub Total", subTotal - servicesTotal)}
                     ${serviceRows}
+                    ${subTotalRow}
                     ${deductionRows}
                     ${settlementRows}
                 </tbody>
@@ -888,8 +876,6 @@ async function printPurchaseOrderA4(purchase, posInfo) {
     const currencyName = purchase.currency_name ?? "$";
 
     const { rows, subtotal } = buildA4PurchaseItemsTable(purchase.lines, factor);
-    const deposit = Number(purchase.deposit_amount ?? 0) * factor;
-    const balance = subtotal - deposit;
 
     const html = `
         ${style_a4_document}
@@ -921,17 +907,19 @@ async function printPurchaseOrderA4(purchase, posInfo) {
                 </thead>
                 <tbody>
                     ${rows}
+                    <!-- Sub Total and Grand Total only. A purchase order states
+                         what the goods cost, not what has been paid against it,
+                         so the Deposit and Balance rows were dropped: payment
+                         belongs on the ledger, not on the order handed to the
+                         vendor. With no discount or VAT on a PO the two figures
+                         agree, which is intended. -->
                     <tr class="a4-total-row">
                         <td colspan="5" class="a4-total-label">Sub Total (${currencyName})</td>
                         <td class="a4-col-num">${formatMoneyA4(subtotal)}</td>
                     </tr>
-                    <tr class="a4-total-row">
-                        <td colspan="5" class="a4-total-label">Deposit (${currencyName})</td>
-                        <td class="a4-col-num">${formatMoneyA4(deposit)}</td>
-                    </tr>
                     <tr class="a4-total-row a4-grand-row">
-                        <td colspan="5" class="a4-total-label">Balance (${currencyName})</td>
-                        <td class="a4-col-num">${formatMoneyA4(balance)}</td>
+                        <td colspan="5" class="a4-total-label">Grand Total (${currencyName})</td>
+                        <td class="a4-col-num">${formatMoneyA4(subtotal)}</td>
                     </tr>
                 </tbody>
             </table>

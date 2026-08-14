@@ -23,7 +23,6 @@ class PermissionSeeder extends Seeder
             'warehouse'       => 'Manage Warehouse',
             'product'         => 'Manage Products',
             'category'        => 'Manage Categories',
-            'quotation'       => 'Manage Quotes',
             'customer'        => 'Manage Customers',
             'purchasing'      => 'Purchasing',
             'vendor'          => 'Manage Vendors',
@@ -42,11 +41,10 @@ class PermissionSeeder extends Seeder
         // action instead of each report being its own top-level section — each
         // action is a distinct report a user can be allowed or not.
         $sectionActions = [
-            'pos_sale'        => ['view', 'order', 'sell', 'edit_price', 'edit_discount', 'view_grid', 'view_list', 'mark_delivered'],
+            'pos_sale'        => ['view', 'order', 'sell', 'edit_price', 'edit_discount', 'view_grid', 'view_list', 'mark_delivered', 'mark_all_paid'],
             'warehouse'       => ['view', 'create', 'edit', 'delete', 'adjustment', 'transfer', 'movement'],
             'product'         => ['view', 'create', 'edit'],
             'category'        => ['view', 'create', 'edit', 'delete'],
-            'quotation'       => ['view', 'create', 'edit'],
             'customer'        => ['view', 'create', 'edit', 'delete'],
             'purchasing'      => ['view', 'purchase', 'purchase_return'],
             'vendor'          => ['view', 'create', 'edit'],

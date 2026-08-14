@@ -2657,6 +2657,36 @@ document
         reader.readAsDataURL(file);
     });
 
+/**
+ * Suggest the next code in the series when the New Product form opens.
+ *
+ * Filled only when the field is empty, so a code the user typed (or a reopened
+ * form) is never overwritten. It stays editable — this is a suggestion, and the
+ * server still rejects a duplicate on save.
+ */
+async function suggestNextProductCode(prefix = "FG-") {
+    const input = document.querySelector('#AddProductForm input[name="code"]');
+    if (!input || input.value.trim() !== "") return;
+
+    try {
+        const res = await fetch(
+            `/products/next-code?prefix=${encodeURIComponent(prefix)}`,
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.code) input.value = data.code;
+    } catch (err) {
+        console.error(err);
+    }
+}
+window.suggestNextProductCode = suggestNextProductCode;
+
+document.addEventListener("DOMContentLoaded", () => {
+    document
+        .getElementById("btnAddProduct")
+        ?.addEventListener("click", () => suggestNextProductCode());
+});
+
 // ADD Product
 document.addEventListener("DOMContentLoaded", () => {
     const form = document.getElementById("AddProductForm");
@@ -2926,10 +2956,63 @@ function fetchSalesData(page = 1) {
     if (document_no) params.append("document_no", document_no);
     params.append("page", page);
 
+    showSalesSkeleton();
+
     fetch(`/sales-report?${params.toString()}`)
         .then((res) => res.json())
         .then((data) => renderTable(data))
-        .catch((err) => console.error(err));
+        .catch((err) => {
+            console.error(err);
+            // The skeleton must not be left spinning forever on a failure.
+            const tbody = document.getElementById("salesTableBody");
+            if (tbody) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="24" class="text-center py-6 text-red-500">
+                            Error loading data ⚠️
+                        </td>
+                    </tr>
+                `;
+            }
+        });
+}
+
+/**
+ * Grey placeholder rows while a table loads.
+ *
+ * Drawn with the SAME number of cells as a real row, so the column widths do
+ * not jump when the data lands. Hidden columns are skipped by reading the
+ * header, which keeps it in step with VAT / Payment Method / Customer Type
+ * being switched off.
+ */
+function showTableSkeleton(tableId, tbodyId, rowCount = 8) {
+    const table = document.getElementById(tableId);
+    const tbody = document.getElementById(tbodyId);
+    if (!table || !tbody) return;
+
+    const headRow = table.querySelector("thead tr:last-child");
+    const cells = headRow
+        ? [...headRow.children].filter(
+            (th) => getComputedStyle(th).display !== "none",
+        ).length
+        : 12;
+
+    // Varied widths so it reads as content rather than a progress bar.
+    const widths = ["w-10", "w-24", "w-20", "w-28", "w-16", "w-24", "w-20"];
+
+    let html = "";
+    for (let r = 0; r < rowCount; r++) {
+        html += '<tr class="animate-pulse">';
+        for (let c = 0; c < cells; c++) {
+            html += `<td class="px-3 py-2"><div class="h-3 ${widths[(r + c) % widths.length]} rounded bg-slate-200"></div></td>`;
+        }
+        html += "</tr>";
+    }
+    tbody.innerHTML = html;
+}
+
+function showSalesSkeleton(rowCount = 8) {
+    showTableSkeleton("Table-sale-list", "salesTableBody", rowCount);
 }
 
 /*
@@ -3040,13 +3123,13 @@ function renderTable(response) {
         <td>${rowCount}</td>
         <td>${header.invoice_number ?? ""}</td>
         <td>${header.source_no ?? ""}</td>
-        <td>${header.created_at ? new Date(header.created_at).toLocaleString("en-GB") : ""}</td>
+        <td>${formatDateTime(header.created_at)}</td>
         <td>${header.contact_name ?? ""}</td>
         <td>${header.phone ?? ""}</td>
         <td>${header.address ?? ""}</td>
         <td>${header.invoice_date ? new Date(header.invoice_date).toLocaleDateString("en-GB") : ""}</td>
-        <td>${header.payment_method ?? ""}</td>
-        <td>${header.customer_type ?? ""}</td>
+        <td class="hidden">${header.payment_method ?? ""}</td>
+        <td class="hidden">${header.customer_type ?? ""}</td>
 
         <td>${line.name ?? ""}</td>
         <td>${line.variant ?? ""}</td>
@@ -3061,8 +3144,8 @@ function renderTable(response) {
         <td class="text-right">${formatPercent(discountPercent)} %</td>
         <td class="text-right">${discountAmount}</td>
 
-        <td class="text-right">${formatPercent(vatPercent)} %</td>
-        <td class="text-right">${vatAmount}</td>
+        <td class="text-right vat-col hidden">${formatPercent(vatPercent)} %</td>
+        <td class="text-right vat-col hidden">${vatAmount}</td>
 
         <td class="text-right">${netAmount}</td>
         <td class="text-right">${grandTotalAmount}</td>
@@ -5171,9 +5254,30 @@ function formatDate(dateStr) {
     return new Date(dateStr).toLocaleDateString("en-GB");
 }
 
+/**
+ * "14/08/2026 2:00 AM"
+ *
+ * Built by hand rather than with toLocaleString: en-GB gives a 24-hour clock
+ * with seconds and a comma ("14/08/2026, 02:00:00"), and the en-US 12-hour form
+ * puts the month first. Neither is the wanted shape, and both change with the
+ * viewer's locale — this does not.
+ */
 function formatDateTime(dateStr) {
     if (!dateStr) return "";
-    return new Date(dateStr).toLocaleString("en-GB");
+
+    // MySQL hands back "2026-08-14 02:00:00". The space form is not part of the
+    // date spec, so Safari returns Invalid Date for it; an ISO "T" is safe
+    // everywhere.
+    const d = new Date(String(dateStr).replace(" ", "T"));
+    if (isNaN(d.getTime())) return "";
+
+    const pad = (n) => String(n).padStart(2, "0");
+    // 0 -> 12 AM and 12 -> 12 PM; a bare % 12 would print midnight as "0:00".
+    const hour12 = d.getHours() % 12 || 12;
+    const suffix = d.getHours() >= 12 ? "PM" : "AM";
+
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
+        + ` ${hour12}:${pad(d.getMinutes())} ${suffix}`;
 }
 
 [
@@ -5198,11 +5302,10 @@ async function loadItemLedgerEntries(page = 1) {
     const tbody = document.getElementById("item_ledger_entry_table_body");
     itemLedgerCurrentPage = page;
 
-    tbody.innerHTML = `
-        <tr>
-            <td colspan="38" class="px-3 py-4 text-center text-gray-500">Loading...</td>
-        </tr>
-    `;
+    // Placeholder rows rather than a single "Loading..." line: this table is
+    // very wide, so a one-cell message collapsed every column and the layout
+    // jumped as soon as the real rows arrived.
+    showTableSkeleton("Table-item-ledger-entry", "item_ledger_entry_table_body");
 
     try {
         const params = new URLSearchParams({
@@ -5274,19 +5377,22 @@ function renderItemLedgerEntries(rows) {
             <td class="px-2 py-1">${row.entry_type ?? ""}</td>
 
             <td class="px-2 py-1 text-right">${formatNumber(row.unit_cost)} $</td>
-            <td class="px-2 py-1 text-right font-semibold">${formatNumber(row.cost_amount)} $</td>
+            <!-- Highlighted column, paired with Total Amount below. font-BOLD, not
+                 font-semibold: hightlightRow() strips font-semibold from every td
+                 when a row is deselected, which silently un-bolded this cell. -->
+            <td class="px-2 py-1 text-right font-bold text-amber-900 bg-amber-50 border-l-2 border-r-2 border-l-amber-200 border-r-amber-200">${formatNumber(row.cost_amount)} $</td>
             <td class="px-2 py-1 text-right">${formatNumber(row.unit_price)} $</td>
             <td class="px-2 py-1 text-right">${formatNumber(row.sell_price)} $</td>
 
             <td class="px-2 py-1 text-right">${formatNumber(row.discount_percent)} %</td>
             <td class="px-2 py-1 text-right">${formatNumber(row.discount_amount)} $</td>
 
-            <td class="px-2 py-1 text-right">${formatNumber(row.vat)} %</td>
-            <td class="px-2 py-1 text-right">${formatNumber(row.vat_amount)} $</td>
+            <td class="px-2 py-1 text-right vat-col hidden">${formatNumber(row.vat)} %</td>
+            <td class="px-2 py-1 text-right vat-col hidden">${formatNumber(row.vat_amount)} $</td>
 
             <td class="px-2 py-1 text-right">${formatNumber(row.line_amount)} $</td>
             <td class="px-2 py-1 text-right">${formatNumber(row.net_amount)} $</td>
-            <td class="px-2 py-1 text-right">${formatNumber(row.grand_total_amount)} $</td>
+            <td class="px-2 py-1 text-right font-bold text-amber-900 bg-amber-50 border-l-2 border-r-2 border-l-amber-200 border-r-amber-200">${formatNumber(row.grand_total_amount)} $</td>
 
             <td class="px-2 py-1">${row.customer_id ?? ""}</td>
             <td class="px-2 py-1">${row.customer_name ?? ""}</td>
@@ -5930,6 +6036,10 @@ function loadSaleOrders(page = 1) {
         user_id: user_created_by_id,
     });
 
+    // The modal has just been shown, so it would otherwise sit empty until the
+    // request lands.
+    showTableSkeleton("Table-sale-order", "Table-sale-order-list");
+
     fetch(`/get-sale-orders?${params.toString()}`)
         .then((res) => res.json())
         .then((res) => {
@@ -5983,7 +6093,7 @@ function loadSaleOrders(page = 1) {
 
 
                    <td class="px-4 py-3 text-right">${money(row.total_amount)}</td>
-                    <td class="px-4 py-3 text-right">${money(row.vat_amount)}</td>
+                    <td class="px-4 py-3 text-right vat-col hidden">${money(row.vat_amount)}</td>
                     <td class="px-4 py-3 text-right">${money(row.discount_amount)}</td>
                     <td class="px-4 py-3 text-right">${money(row.grand_total)}</td>
                     <td class="px-4 py-3 text-right">${money(row.paid_amount)}</td>
@@ -6477,10 +6587,31 @@ function showSaleOrderRowMenu(event, rowElement, id) {
     event.preventDefault();
     closeSaleOrderRowMenu();
 
-    selectSaleOrderRow(rowElement, id);
+    // Right-clicking inside an existing multi-row selection keeps it, so Copy
+    // acts on every picked row; right-clicking elsewhere selects just that one.
+    selectSaleOrderRow(rowElement, id, rowElement.hasAttribute("data-sel"));
 
     const row = saleOrderRowsById[id] || {};
     const shipped = row.status === "Deposit" || row.status === "Completed";
+
+    // Copies the selected rows as tab-separated text — pastes straight into
+    // Excel. Ctrl/Shift-click first to take more than one.
+    const copyItems = [
+        { label: "Copy", icon: "fa-copy", kind: "copy", action: () => copyTableRows("Table-sale-order", false) },
+        { label: "Copy with header", icon: "fa-table-list", kind: "copy", action: () => copyTableRows("Table-sale-order", true) },
+    ];
+
+    // With several orders picked, the menu is copy-only. Everything else here
+    // acts on ONE order — View Line, the prints, Pay, Cancel all read
+    // selectedSaleOrderId — so offering them against a multi-row selection
+    // would quietly operate on just the last row clicked.
+    const selectedCount = document.querySelectorAll(
+        "#Table-sale-order tbody tr[data-sel]",
+    ).length;
+
+    if (selectedCount > 1) {
+        return renderSaleOrderRowMenu(copyItems, event);
+    }
 
     // kind: "form" = opens something (a modal, print preview, or the cart)
     // for you to review/fill in before anything actually happens; "action" =
@@ -6492,6 +6623,7 @@ function showSaleOrderRowMenu(event, rowElement, id) {
         { label: "Print Delivery Note", icon: "fa-truck-fast", kind: "form", action: () => printSelectedSaleOrderDeliveryNote() },
         { label: "Print Receipt", icon: "fa-receipt", kind: "form", action: () => printSelectedSaleOrderReceipt() },
         { label: "Picking List", icon: "fa-boxes-packing", kind: "form", action: () => printSelectedSaleOrderPickingList() },
+        ...copyItems,
     ];
 
     // Only offered once the order has actually shipped — before that there's
@@ -6522,9 +6654,21 @@ function showSaleOrderRowMenu(event, rowElement, id) {
         items.push({ label: "Cancel Order", icon: "fa-ban", kind: "action", action: () => cancelSelectedSaleOrder(id) });
     }
 
-    const kindTag = (kind) => kind === "action"
-        ? `<span style="margin-left:auto; font-size:10px; font-weight:700; letter-spacing:.02em; color:#b45309; background:#fef3c7; padding:2px 6px; border-radius:999px;">ACTION</span>`
-        : `<span style="margin-left:auto; font-size:10px; font-weight:700; letter-spacing:.02em; color:#6b7280; background:#f3f4f6; padding:2px 6px; border-radius:999px;">FORM</span>`;
+    return renderSaleOrderRowMenu(items, event);
+}
+
+/** Build, place and wire the sale order row menu for a given item list. */
+function renderSaleOrderRowMenu(items, event) {
+    // "copy" is its own kind: it changes nothing, so wearing the amber ACTION
+    // badge that warns about Cancel Order would misrepresent it.
+    const kindTag = (kind) => {
+        const tag = (color, bg, text) =>
+            `<span style="margin-left:auto; font-size:10px; font-weight:700; letter-spacing:.02em; color:${color}; background:${bg}; padding:2px 6px; border-radius:999px;">${text}</span>`;
+
+        if (kind === "action") return tag("#b45309", "#fef3c7", "ACTION");
+        if (kind === "copy") return tag("#3730a3", "#e0e7ff", "COPY");
+        return tag("#6b7280", "#f3f4f6", "FORM");
+    };
 
     const menu = document.createElement("div");
     menu.id = "saleOrderRowMenu";
@@ -6613,23 +6757,29 @@ async function cancelSelectedSaleOrder(id) {
     }
 }
 
-function selectSaleOrderRow(rowElement, id) {
+function selectSaleOrderRow(rowElement, id, keepSelection = false) {
     selectedSaleOrderId = id;
 
     document.getElementById("saleOrderRowActions")?.classList.remove("hidden");
 
-    document.querySelectorAll("#Table-sale-order tbody tr").forEach((tr) => {
-        tr.classList.remove("bg-blue-100", "shadow-lg", "scale-[1.01]");
+    // keepSelection is for right-clicking a row that is already part of a
+    // multi-row selection: the menu needs to know which order it is acting on,
+    // but wiping the other rows there would throw away what the user picked.
+    if (!keepSelection) {
+        document.querySelectorAll("#Table-sale-order tbody tr").forEach((tr) => {
+            tr.removeAttribute("data-sel");
+            tr.classList.remove("bg-blue-100", "shadow-lg", "scale-[1.01]");
 
-        tr.querySelectorAll("td").forEach((td) => {
-            td.classList.remove(
-                "bg-blue-100",
-                "border-t",
-                "border-b",
-                "border-blue-400",
-            );
+            tr.querySelectorAll("td").forEach((td) => {
+                td.classList.remove(
+                    "bg-blue-100",
+                    "border-t",
+                    "border-b",
+                    "border-blue-400",
+                );
+            });
         });
-    });
+    }
 
     // highlight row
     rowElement.classList.add(
@@ -6647,16 +6797,22 @@ function selectSaleOrderRow(rowElement, id) {
             "border-blue-400",
         );
     });
+    // Recorded for the copy menu — see markRowSelected().
+    rowElement.setAttribute("data-sel", "1");
+
     // get all td
     const tds = rowElement.querySelectorAll("td");
 
     document.querySelector("#return_document_no").value =
         tds[2].innerText.trim();
 
-    // uncheck all
-    document.querySelectorAll(".sale-order-checkbox").forEach((cb) => {
-        cb.checked = false;
-    });
+    // The boxes mirror the selection, so with several rows picked they all show
+    // ticked rather than only the last one clicked.
+    if (!keepSelection) {
+        document.querySelectorAll(".sale-order-checkbox").forEach((cb) => {
+            cb.checked = false;
+        });
+    }
 
     // check current
     const checkbox = rowElement.querySelector(".sale-order-checkbox");
@@ -6679,6 +6835,11 @@ function closeViewLotModal() {
 
 function hightlightRow(table_id, rowElement) {
     document.querySelectorAll(`#${table_id} tbody tr`).forEach((tr) => {
+        // Selection is tracked by an attribute, not by the styling classes:
+        // the classes get added and removed for several reasons, so reading
+        // them back to answer "what is selected?" is not reliable.
+        tr.removeAttribute("data-sel");
+
         tr.classList.remove(
             "shadow-lg",
             "scale-[1.01]",
@@ -6699,24 +6860,335 @@ function hightlightRow(table_id, rowElement) {
     });
 
     // highlight row
-    rowElement.classList.add(
-        "shadow-lg",
-        "scale-[1.01]",
-        "transition",
-        "duration-150",
-    );
+    markRowSelected(rowElement, true);
+}
 
+/** Apply (or undo) the selected look, and record it for the copy menu. */
+function markRowSelected(rowElement, on) {
+    const rowClasses = ["shadow-lg", "scale-[1.01]", "transition", "duration-150"];
+    const cellClasses = [
+        "bg-blue-100",
+        "border-t",
+        "border-b",
+        "border-blue-400",
+        "text-blue-900",
+        "font-semibold",
+    ];
+
+    rowElement.classList[on ? "add" : "remove"](...rowClasses);
     rowElement.querySelectorAll("td").forEach((td) => {
-        td.classList.add(
-            "bg-blue-100",
-            "border-t",
-            "border-b",
-            "border-blue-400",
-            "text-blue-900",
-            "font-semibold",
-        );
+        td.classList[on ? "add" : "remove"](...cellClasses);
+    });
+
+    if (on) rowElement.setAttribute("data-sel", "1");
+    else rowElement.removeAttribute("data-sel");
+
+    // The sale invoice list shows a tickbox per row; keep it in step so a
+    // Ctrl-click selection is not contradicted by an unticked box.
+    const cb = rowElement.querySelector(".sale-order-checkbox");
+    if (cb) cb.checked = on;
+}
+
+/* =====================================================================
+ * Select rows and copy them (right-click → Copy / Copy with header)
+ *
+ * Plain click keeps its existing behaviour — select this one row. Ctrl/Cmd
+ * adds or removes one, Shift takes a range, so several rows can go out at
+ * once. Output is tab separated, which is what Excel and Sheets read from
+ * the clipboard directly.
+ * ===================================================================== */
+// Tables that get THIS menu on right-click.
+const COPY_MENU_TABLES = [
+    "Table-item-ledger-entry",
+    "Table-sale-list",
+    "Table-expense-list",
+];
+
+// Tables where rows can be multi-selected and copied. The sale invoice list is
+// here but NOT above: it already has its own right-click menu, so Copy is added
+// as two entries inside that one rather than opening a second menu over it.
+const COPYABLE_TABLES = [...COPY_MENU_TABLES, "Table-sale-order"];
+
+let copyMenuTable = null;   // table the open menu belongs to
+let copyAnchorRow = null;   // where a Shift range starts from
+
+function copyableTableOf(node) {
+    const table = node?.closest?.("table");
+    return table && COPYABLE_TABLES.includes(table.id) ? table : null;
+}
+
+function copyRowsOf(table) {
+    return [...table.querySelectorAll("tbody tr")];
+}
+
+// Shift+click is also the browser's own "extend the text selection" gesture, so
+// picking a range left every cell in it blue-highlighted as text. Cancelling the
+// mousedown stops the text selection from ever starting; the click still fires,
+// so row selection below is unaffected.
+document.addEventListener(
+    "mousedown",
+    (e) => {
+        if (!e.shiftKey) return;
+        if (!copyableTableOf(e.target.closest?.("tbody tr"))) return;
+        e.preventDefault();
+    },
+    true,
+);
+
+// Ctrl/Cmd toggles one row, Shift takes a range. Runs in the CAPTURE phase and
+// stops the event so the row's own onclick="hightlightRow(...)" — which clears
+// every other row — never fires for a modified click. A plain click is left
+// alone entirely, so nothing about the existing behaviour changes.
+document.addEventListener(
+    "click",
+    (e) => {
+        if (!(e.ctrlKey || e.metaKey || e.shiftKey)) return;
+
+        const tr = e.target.closest?.("tbody tr");
+        const table = copyableTableOf(tr);
+        if (!table) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (e.shiftKey && copyAnchorRow && copyAnchorRow.closest("table") === table) {
+            // Belt and braces with the mousedown handler above: if any text did
+            // get selected, drop it so only the row highlight is visible.
+            window.getSelection()?.removeAllRanges();
+
+            const rows = copyRowsOf(table);
+            const from = rows.indexOf(copyAnchorRow);
+            const to = rows.indexOf(tr);
+            if (from !== -1 && to !== -1) {
+                rows.forEach((r) => markRowSelected(r, false));
+                rows.slice(Math.min(from, to), Math.max(from, to) + 1)
+                    .forEach((r) => markRowSelected(r, true));
+            }
+            return;
+        }
+
+        markRowSelected(tr, !tr.hasAttribute("data-sel"));
+        copyAnchorRow = tr;
+    },
+    true,
+);
+
+// Remember where a plain click landed, so a following Shift+click has a range
+// to measure from.
+document.addEventListener("click", (e) => {
+    const tr = e.target.closest?.("tbody tr");
+    if (copyableTableOf(tr)) copyAnchorRow = tr;
+});
+
+document.addEventListener("contextmenu", (e) => {
+    const tr = e.target.closest?.("tbody tr");
+    const table = tr?.closest?.("table");
+    // COPY_MENU_TABLES, not COPYABLE_TABLES: the sale invoice list brings its
+    // own menu, and opening a second one on top of it would be a mess.
+    if (!table || !COPY_MENU_TABLES.includes(table.id)) return;
+
+    const menu = document.getElementById("tableCopyMenu");
+    if (!menu) return;
+
+    e.preventDefault();
+
+    // Right-clicking a row that is not part of the selection selects just it —
+    // what every grid does, and it stops "Copy" acting on rows out of view.
+    if (!tr.hasAttribute("data-sel")) {
+        copyRowsOf(table).forEach((r) => markRowSelected(r, false));
+        markRowSelected(tr, true);
+        copyAnchorRow = tr;
+    }
+
+    copyMenuTable = table;
+    openCopyMenuAt(menu, e.clientX, e.clientY);
+});
+
+function openCopyMenuAt(menu, x, y) {
+    // Shown before measuring: a display:none element reports zero size, so the
+    // flip below would never trigger.
+    menu.classList.remove("hidden");
+    const { width, height } = menu.getBoundingClientRect();
+
+    // Flip rather than overflow when opened near the right or bottom edge.
+    const left = x + width > window.innerWidth ? Math.max(0, x - width) : x;
+    const top = y + height > window.innerHeight ? Math.max(0, y - height) : y;
+
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
+}
+
+function closeCopyMenu() {
+    document.getElementById("tableCopyMenu")?.classList.add("hidden");
+}
+
+document.addEventListener("click", closeCopyMenu);
+document.addEventListener("scroll", closeCopyMenu, true);
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeCopyMenu();
+});
+
+function selectAllCopyRows() {
+    if (!copyMenuTable) return;
+    copyRowsOf(copyMenuTable).forEach((r) => markRowSelected(r, true));
+    closeCopyMenu();
+}
+
+/**
+ * Column positions that are hidden on screen.
+ *
+ * Read once from the header rather than per cell: the VAT columns are hidden in
+ * BOTH the head and the body at the same index, so one lookup keeps the copied
+ * header and the copied values lined up. Copying a column the user cannot see
+ * would also quietly leak figures they believe are switched off.
+ */
+function hiddenColumnIndexes(table) {
+    const headRow = table.querySelector("thead tr:last-child");
+    const hidden = new Set();
+    if (!headRow) return hidden;
+
+    [...headRow.children].forEach((th, i) => {
+        if (getComputedStyle(th).display === "none") hidden.add(i);
+    });
+    return hidden;
+}
+
+// Tabs and newlines inside a cell would invent extra columns or rows once
+// pasted, so they are flattened to spaces.
+function cellToText(cell) {
+    // A cell holding a control has no useful text of its own. The sale order
+    // list's Delivery column is a <select>, which reads back as every option
+    // run together ("PendingDeliveredShipped") instead of the chosen one.
+    const select = cell.querySelector?.("select");
+    if (select) {
+        return (select.selectedOptions?.[0]?.text ?? select.value ?? "")
+            .replace(/\s+/g, " ")
+            .trim();
+    }
+
+    const box = cell.querySelector?.('input[type="checkbox"]');
+    if (box && !cell.textContent.trim()) return box.checked ? "Yes" : "";
+
+    const input = cell.querySelector?.("input, textarea");
+    if (input && !cell.textContent.trim()) return String(input.value ?? "").trim();
+
+    return (cell.innerText ?? cell.textContent ?? "")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+function rowToTsv(row, hidden) {
+    return [...row.children]
+        .filter((_, i) => !hidden.has(i))
+        .map(cellToText)
+        .join("\t");
+}
+
+function copySelectedRows(withHeader) {
+    const table = copyMenuTable;
+    closeCopyMenu();
+    copyTableRows(table, withHeader);
+}
+
+/** Copy a table's selected rows. Takes the table or its id, so the sale
+ *  invoice list's own context menu can call it directly. */
+function copyTableRows(tableOrId, withHeader) {
+    const table = typeof tableOrId === "string"
+        ? document.getElementById(tableOrId)
+        : tableOrId;
+    if (!table) return;
+
+    const rows = copyRowsOf(table).filter((r) => r.hasAttribute("data-sel"));
+    if (!rows.length) return;
+
+    const hidden = hiddenColumnIndexes(table);
+    const lines = [];
+
+    if (withHeader) {
+        const headRow = table.querySelector("thead tr:last-child");
+        if (headRow) lines.push(rowToTsv(headRow, hidden));
+    }
+    rows.forEach((r) => lines.push(rowToTsv(r, hidden)));
+
+    const tpl = (id) => document.getElementById(id)?.textContent?.trim() ?? "";
+
+    copyTextToClipboard(lines.join("\n"))
+        .then(() => {
+            const msg = rows.length === 1
+                ? tpl("tableCopyMsgOne")
+                : tpl("tableCopyMsgMany");
+            showToast({
+                message: (msg || "Copied :n row(s)").replace(":n", rows.length),
+                type: "success",
+            });
+        })
+        .catch(() => {
+            showToast({
+                message: tpl("tableCopyMsgFail") || "Could not copy to clipboard",
+                type: "error",
+            });
+        });
+}
+
+/**
+ * navigator.clipboard only exists on HTTPS and localhost. This runs on plain
+ * HTTP in some shops, where it is undefined — so fall back to the old
+ * execCommand path rather than failing with nothing copied.
+ */
+function copyTextToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+        return navigator.clipboard.writeText(text);
+    }
+
+    return new Promise((resolve, reject) => {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.setAttribute("readonly", "");
+        // Off-screen, so selecting it does not scroll the page.
+        ta.style.cssText = "position:fixed;top:-1000px;left:-1000px;opacity:0;";
+        document.body.appendChild(ta);
+        ta.select();
+
+        let ok = false;
+        try {
+            ok = document.execCommand("copy");
+        } catch (err) {
+            ok = false;
+        }
+        document.body.removeChild(ta);
+        ok ? resolve() : reject(new Error("copy failed"));
     });
 }
+
+// Ctrl+C copies the selection, Ctrl+A selects every row — but only while a row
+// is actually selected and the user is not typing in a field or copying their
+// own text selection, so normal copying is never hijacked.
+document.addEventListener("keydown", (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+
+    const key = e.key.toLowerCase();
+    if (key !== "c" && key !== "a") return;
+    if (e.target.closest("input, textarea, select, [contenteditable]")) return;
+
+    const selected = document.querySelector(
+        COPYABLE_TABLES.map((id) => `#${id} tbody tr[data-sel]`).join(","),
+    );
+    if (!selected) return;
+
+    const table = selected.closest("table");
+    copyMenuTable = table;
+
+    if (key === "a") {
+        e.preventDefault();
+        selectAllCopyRows();
+        return;
+    }
+
+    if (!String(window.getSelection() ?? "").trim()) {
+        e.preventDefault();
+        copySelectedRows(false);
+    }
+});
 function viewSelectedSaleOrderLine() {
     if (!selectedSaleOrderId) {
         showToast({
@@ -7251,7 +7723,7 @@ function renderSaleOrderLine(data) {
                 <td class="px-4 py-2 text-right">${formatCurrency(line.sell_price, factor, currency)} ${currency}</td>
                 <td class="px-4 py-2 text-right">${formatCurrency(line.sub_total, factor, currency)} ${currency}</td>
                 <td class="px-4 py-2 text-right">${formatCurrency(line.discount_amount, factor, currency)} ${currency}</td>
-                <td class="px-4 py-2 text-right">${formatCurrency(line.vat_amount, factor, currency)} ${currency}</td>
+                <td class="px-4 py-2 text-right vat-col hidden">${formatCurrency(line.vat_amount, factor, currency)} ${currency}</td>
                 <td class="px-4 py-2 text-right">${formatCurrency(line.grand_total_amount, factor, currency)} ${currency}</td>
             </tr>
         `;
@@ -7279,6 +7751,36 @@ function applyQuotationCustomer(customer) {
     const search = document.getElementById("quotation-customer-search");
     if (search) search.value = customer.name ?? "";
     document.getElementById("quotation-customer-list")?.classList.add("hidden");
+
+    // Push the choice back out to the POS so the two stay in step: picking a
+    // customer inside the preview is the same act as picking one outside it,
+    // and the cart is what actually gets invoiced.
+    syncCustomerToPos(customer);
+}
+
+/**
+ * Mirror a customer chosen inside the preview back onto the POS screen.
+ *
+ * customer_code (not id) is what Cart::selectcustomer() looks up, and the
+ * visible search box is updated too so the POS does not keep showing the
+ * previous name.
+ */
+function syncCustomerToPos(customer) {
+    const code = customer.customer_code ?? customer.code ?? null;
+    if (!code) return;
+
+    const posSearch = document.getElementById("customerSearch");
+    if (posSearch) posSearch.value = customer.name ?? "";
+
+    // #customerValue is bound with wire:model.live, and Cart has no
+    // #[On('selectcustomer')] listener — a dispatched event would go nowhere.
+    // Setting the value and firing 'input' is what Livewire actually watches,
+    // which then runs updatedCustomerId() -> selectcustomer() on the server.
+    const posHidden = document.getElementById("customerValue");
+    if (posHidden && posHidden.value !== String(code)) {
+        posHidden.value = code;
+        posHidden.dispatchEvent(new Event("input", { bubbles: true }));
+    }
 }
 
 function openCustomerCreateFor(context) {
@@ -7379,6 +7881,24 @@ window.addEventListener("open-quotation-preview", (event) => {
     const previewOnly = event.detail.previewOnly === true;
     setQuotationModalMode(previewOnly);
 
+    // The POS is the source of truth each time the modal opens, so changing the
+    // customer outside is reflected inside. Filling only when blank meant the
+    // first value stuck and later changes were ignored — which is why it kept
+    // showing "Walk-in Customer". The fields stay editable afterwards, so a
+    // preview can still be run for someone not on file.
+    const cust = event.detail.customer;
+    if (cust) {
+        const set = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.value = val ?? "";
+        };
+        set("quotation-customer-name", cust.name);
+        set("quotation-customer-phone", cust.phone);
+        set("quotation-customer-address", cust.address);
+        set("quotation-customer-search", cust.name);
+        set("quotation-customer-id", cust.id);
+    }
+
     // Preview leaves the fields exactly as the user left them — whatever is
     // typed is what the printed preview says — so only the quotation path
     // resets them.
@@ -7403,92 +7923,12 @@ window.addEventListener("open-quotation-preview", (event) => {
         event.detail.totals ?? {},
         event.detail.factor ?? 1,
         event.detail.currency ?? "USD",
+        { factor: event.detail.rielFactor, code: event.detail.rielCode },
     );
 });
 
-window.addEventListener("load-quotation", (e) => {
-    const detail = e.detail[0];
-    fillQuotationModal(detail.header);
-    openPreviewLine(
-        detail.cart ?? [],
-        detail.totals ?? {},
-        detail.factor ?? 1,
-        detail.currency ?? "USD",
-    );
-    showToast({
-        message: detail.message,
-        type: "success",
-    });
-});
 
-window.addEventListener("quotation-saved", async (e) => {
-    const message = e.detail[0].message;
-    const quotationId = e.detail[0].id;
-    document.getElementById("quotation_id").value = "";
-    document.getElementById("quotation-customer-id").value = "";
-    document.getElementById("quotation-customer-search").value = "";
-    document.getElementById("quotation-customer-name").value = "";
-    document.getElementById("quotation-customer-phone").value = "";
-    document.getElementById("quotation-customer-address").value = "";
-    document.getElementById("quotation-remark").value = "";
-    closeQuotationModal();
-    showToast({
-        message: message,
-        type: "success",
-    });
 
-    if (quotationId && (await askPrintConfirm("Print this quotation now?"))) {
-        try {
-            const res = await fetch(`/quotations/${quotationId}`);
-            const data = await res.json();
-            await printQuotationA4(data.header, data.lines, pos_profile_for_print);
-        } catch (err) {
-            console.error(err);
-            showToast({ message: "Failed to print quotation", type: "error" });
-        }
-    }
-});
-
-function fillQuotationModal(header) {
-    document.getElementById("quotation_id").value = header.id ?? "";
-    document.getElementById("quotation-customer-id").value =
-        header.customer_id ?? "";
-    document.getElementById("quotation-customer-search").value =
-        header.customer_name ?? "";
-    document.getElementById("quotation-customer-name").value =
-        header.customer_name ?? "";
-    document.getElementById("quotation-customer-phone").value =
-        header.phone ?? "";
-    document.getElementById("quotation-customer-address").value =
-        header.address ?? "";
-    document.getElementById("quotation-remark").value = header.remarks ?? "";
-    document.getElementById("quotation-modal-title").textContent =
-        "Edit Quotation " + (header.quotation_no ?? "");
-    document.getElementById("quotation-save-label").textContent =
-        "Update Quotation";
-}
-
-function submitQuotation() {
-    const quotationId = document.getElementById("quotation_id")?.value || "";
-    const payload = {
-        customer_id:
-            document.getElementById("quotation-customer-id")?.value || "",
-        customer_name:
-            document.getElementById("quotation-customer-name")?.value ||
-            "Walk-in Customer",
-        customer_phone:
-            document.getElementById("quotation-customer-phone")?.value || "",
-        customer_address:
-            document.getElementById("quotation-customer-address")?.value || "",
-        remark: document.getElementById("quotation-remark")?.value || "",
-    };
-
-    if (quotationId) {
-        Livewire.dispatch("updateQuotation", { payload });
-    } else {
-        Livewire.dispatch("saveQuotation", { payload });
-    }
-}
 
 // Same customer fields as submitQuotation, but routed to a preview so nothing is
 // written — the server builds the document and hands it straight back for
@@ -7497,20 +7937,23 @@ function submitQuotation() {
 // about to be handed.
 function previewQuotation() {
     const payload = {
+        // Blank stays blank — the server no longer substitutes a placeholder.
         customer_name:
-            document.getElementById("quotation-customer-name")?.value ||
-            "Walk-in Customer",
+            document.getElementById("quotation-customer-name")?.value || "",
         customer_phone:
             document.getElementById("quotation-customer-phone")?.value || "",
         customer_address:
             document.getElementById("quotation-customer-address")?.value || "",
         remark: document.getElementById("quotation-remark")?.value || "",
+        // The currency the modal is being read in, so the printed form comes
+        // out in whichever one the switch is showing. Still preview-only —
+        // nothing here saves.
+        view_factor: Number(salePreviewCurrency.factor) || 1,
     };
 
-    Livewire.dispatch(
-        quotationModalIsPreviewOnly ? "previewInvoice" : "previewQuotation",
-        { payload },
-    );
+    // Quotations were removed; this modal is preview-only now, so it always
+    // prints the invoice form.
+    Livewire.dispatch("previewInvoice", { payload });
 }
 
 // The profile to print a preview under is the signed-in user's: they are the one
@@ -7520,19 +7963,6 @@ function previewProfile() {
         ? pos_profile_for_print
         : (window.pos_profile_for_print ?? null);
 }
-
-window.addEventListener("quotation-preview", async (e) => {
-    const detail = e.detail?.[0] ?? e.detail ?? {};
-    try {
-        await printQuotationA4(detail.header ?? {}, detail.lines ?? [], previewProfile());
-    } catch (err) {
-        console.error("Quotation preview failed:", err);
-        showToast({
-            message: `Failed to preview quotation — ${err?.name ?? "Error"}: ${err?.message ?? err}`,
-            type: "error",
-        });
-    }
-});
 
 window.addEventListener("invoice-preview", async (e) => {
     const detail = e.detail?.[0] ?? e.detail ?? {};
@@ -7555,229 +7985,157 @@ function closeQuotationModal() {
 
 /* ===================== Quotations List ===================== */
 
-function openQuotationListModal() {
-    const modal = document.getElementById("quotationListModal");
-    if (!modal) return;
-    modal.classList.remove("hidden");
-    modal.classList.add("flex");
-    loadQuotations(1);
-}
 
-function closeQuotationListModal() {
-    const modal = document.getElementById("quotationListModal");
-    if (!modal) return;
-    modal.classList.add("hidden");
-    modal.classList.remove("flex");
-}
 
-function clearQuotationFilters() {
-    ["quotation_document_search", "quotation_search"].forEach((id) => {
-        const el = document.getElementById(id);
-        if (el) el.value = "";
-    });
-    ["quotation_status", "quotation_from_date", "quotation_to_date"].forEach(
-        (id) => {
-            const el = document.getElementById(id);
-            if (el) el.value = "";
-        },
-    );
-    loadQuotations(1);
-}
 
-[
-    "quotation_document_search",
-    "quotation_search",
-    "quotation_status",
-    "quotation_from_date",
-    "quotation_to_date",
-].forEach((id) => {
-    document.getElementById(id)?.addEventListener("input", () => {
-        loadQuotations(1);
-    });
-    document.getElementById(id)?.addEventListener("change", () => {
-        loadQuotations(1);
-    });
-});
 
-let selectedQuotationId = null;
 
-function loadQuotations(page = 1) {
-    const search = document.getElementById("quotation_search")?.value || "";
-    const search_document =
-        document.getElementById("quotation_document_search")?.value || "";
-    const status = document.getElementById("quotation_status")?.value || "";
-    const from_date =
-        document.getElementById("quotation_from_date")?.value || "";
-    const to_date = document.getElementById("quotation_to_date")?.value || "";
 
-    const params = new URLSearchParams({
-        page: page,
-        search: search,
-        search_document: search_document,
-        status: status,
-        from_date: from_date,
-        to_date: to_date,
-    });
 
-    fetch(`/quotations?${params.toString()}`)
-        .then((res) => res.json())
-        .then((res) => {
-            const tbody = document.getElementById("Table-quotation-list");
-            tbody.innerHTML = "";
 
-            if (!res.data || res.data.length === 0) {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="8" class="text-center py-14 text-slate-400">
-                            <i class="fa-solid fa-file-circle-question text-3xl mb-2 block"></i>
-                            No quotations found
-                        </td>
-                    </tr>`;
-                document.getElementById("quotation-pagination").innerHTML = "";
-                return;
-            }
+/**
+ * What the sale preview is showing, and which currency it is being READ in.
+ *
+ * Display only. The cart, the totals and the sale that eventually posts are all
+ * untouched by the switch — flipping it re-renders this modal and nothing else.
+ */
+let salePreviewData = { cart: [], totals: {} };
+let salePreviewCurrency = { factor: 1, currency: "USD" };
+let salePreviewPoles = {
+    usd: { factor: 1, currency: "USD" },
+    riel: null,
+};
 
-            res.data.forEach((row, index) => {
-                const tr = document.createElement("tr");
-                tr.className = "hover:bg-slate-50 cursor-pointer transition";
-                tr.dataset.id = row.id;
-                tr.onclick = () => {
-                    selectedQuotationId = row.id;
-                    document
-                        .querySelectorAll("#Table-quotation-list tr")
-                        .forEach((r) => r.classList.remove("bg-teal-50"));
-                    tr.classList.add("bg-teal-50");
-                };
-                tr.innerHTML = `
-                    <td class="px-4 py-3 text-slate-500">${index + 1 + (res.current_page - 1) * res.per_page}</td>
-                    <td class="px-4 py-3 font-semibold text-slate-800">${row.quotation_no ?? ""}</td>
-                    <td class="px-4 py-3 text-center text-slate-600">${row.quotation_date ?? ""}</td>
-                    <td class="px-4 py-3 text-slate-700">${row.customer_name ?? ""}</td>
-                    <td class="px-4 py-3 text-slate-600">${row.phone ?? ""}</td>
-                    <td class="px-4 py-3 text-right font-semibold text-slate-800">${listMoney(row.grand_total, row.factor)}</td>
-                    <td class="px-4 py-3 text-center">${getStatusBadge(row.status)}</td>
-                    <td class="px-4 py-3 text-center whitespace-nowrap">
-                        <button onclick="event.stopPropagation(); printQuotationById(${row.id})"
-                            class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-900 text-white text-xs font-semibold mr-1 transition">
-                            <i class="fa-solid fa-print"></i> Print
-                        </button>
-                        ${
-                            row.status === "Quotation"
-                                ? `<button onclick="event.stopPropagation(); loadQuotationToCartUI(${row.id})"
-                                    class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-600 text-white text-xs font-semibold mr-1 transition">
-                                    <i class="fa-solid fa-arrow-right-to-bracket"></i> Load
-                                </button>
-                                <button onclick="event.stopPropagation(); cancelQuotation(${row.id})"
-                                    class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-xs font-semibold transition">
-                                    <i class="fa-solid fa-ban"></i> Cancel
-                                </button>`
-                                : ""
-                        }
-                    </td>
-                `;
-                tbody.appendChild(tr);
-            });
-
-            const pag = document.getElementById("quotation-pagination");
-            pag.textContent = `Page ${res.current_page} of ${res.last_page} | Total ${res.total}`;
-        })
-        .catch((err) => {
-            console.error(err);
-            showToast({ message: "Failed to load quotations", type: "error" });
-        });
-}
-
-async function printQuotationById(id) {
-    try {
-        const res = await fetch(`/quotations/${id}`);
-        if (!res.ok) throw new Error("Failed to load quotation");
-        const data = await res.json();
-        await printQuotationA4(data.header, data.lines, pos_profile_for_print);
-    } catch (err) {
-        console.error(err);
-        showToast({ message: "Failed to print quotation", type: "error" });
-    }
-}
-
-function loadQuotationToCartUI(id) {
-    const input_count_cart = document.getElementById("count_cart_input");
-    const count_cart = input_count_cart ? input_count_cart.value : 0;
-    if (count_cart > 0) {
-        showToast({
-            message: "Cart is not empty. Clear or finish the current cart first.",
-            type: "error",
-        });
-        return;
-    }
-
-    Livewire.dispatch("load-quotation-to-cart", { quotationId: id });
-    closeQuotationListModal();
-}
-
-function cancelQuotation(id) {
-    if (!confirm("Cancel this quotation?")) return;
-
-    fetch("/quotations/update-status", {
-        method: "POST",
-        headers: {
-            "X-CSRF-TOKEN": document.querySelector('input[name="_token"]')
-                .value,
-            Accept: "application/json",
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-            quotation_id: id,
-            status: "Cancelled",
-        }),
-    })
-        .then((res) => res.json())
-        .then((data) => {
-            if (!data.success) throw new Error(data.message || "Update failed");
-            showToast({ message: "Quotation cancelled", type: "success" });
-            loadQuotations(1);
-        })
-        .catch((err) => {
-            showToast({
-                message: err.message || "Failed to cancel quotation",
-                type: "error",
-            });
-        });
-}
-
-function openPreviewLine(cart = [], totals = {}, factor = 1, currency = "USD") {
+function openPreviewLine(cart = [], totals = {}, factor = 1, currency = "USD", riel = null) {
     const modal = document.getElementById("quotationModal");
     modal.classList.remove("hidden");
     modal.classList.add("flex");
 
+    salePreviewData = { cart, totals };
+
+    // The two currencies the button flips between. Taking one pole from the
+    // event rather than hardcoding both keeps the label the POS already uses
+    // ("USD" vs "$"), so flipping there and back does not rename it.
+    const f = Number(factor) || 1;
+    const rielFactor = Number(riel?.factor) || 0;
+
+    salePreviewPoles = f > 1
+        ? {
+            usd: { factor: 1, currency: "USD" },
+            riel: { factor: f, currency },
+        }
+        : {
+            usd: { factor: 1, currency },
+            riel: rielFactor > 1
+                ? { factor: rielFactor, currency: riel?.code ?? "៛" }
+                : null,
+        };
+
+    // Opens in whatever the POS is set to, so the preview matches the screen it
+    // was opened from.
+    salePreviewCurrency = { factor: f, currency };
+
+    renderSalePreviewAmounts();
+}
+
+/**
+ * Flip the sale preview between dollars and riel.
+ *
+ * Only the amounts are redrawn — re-running openPreviewLine() here would
+ * overwrite the customer fields the user may have just typed into the preview.
+ */
+function toggleSalePreviewCurrency() {
+    if (!salePreviewPoles.riel) return;
+
+    salePreviewCurrency =
+        salePreviewCurrency.factor === 1
+            ? salePreviewPoles.riel
+            : salePreviewPoles.usd;
+
+    renderSalePreviewAmounts();
+}
+window.toggleSalePreviewCurrency = toggleSalePreviewCurrency;
+
+function renderSalePreviewAmounts() {
+    const cart = salePreviewData.cart ?? [];
+    const totals = salePreviewData.totals ?? {};
+    const factor = Number(salePreviewCurrency.factor) || 1;
+    const currency = salePreviewCurrency.currency ?? "USD";
+
+    // The button offers whichever currency is not on screen. With no riel rate
+    // configured there is no second currency, so it stays hidden.
+    const toggleBtn = document.getElementById("btn-toggle-sale-preview-currency");
+    if (toggleBtn) {
+        toggleBtn.style.display = salePreviewPoles.riel ? "inline-flex" : "none";
+        const lbl = document.getElementById("sale-preview-currency-label");
+        if (lbl) {
+            const viewIn = lbl.dataset.viewIn || "View in";
+            const other = factor === 1 ? salePreviewPoles.riel : salePreviewPoles.usd;
+            lbl.textContent = `${viewIn} ${other?.currency ?? "$"}`;
+        }
+    }
+
+    // Riel shows every UNIT price on a 100៛ grid, so a line total is not
+    // "base USD × factor rounded once" — it is the rounded unit × qty. Doing it
+    // the other way made a line read 84,500 next to a Grand Total of 84,600,
+    // because 6 × 14,100 was never actually computed. This is the same
+    // WYSIWYG rule Cart::getTotalsDisplayProperty() applies server-side, so the
+    // lines and the totals box now agree by construction rather than by luck.
+    const step = factor > 1 ? 100 : 0;
+    const unitDisp = (baseUnit) => {
+        const v = Number(baseUnit || 0) * factor;
+        return step > 0 ? Math.round(v / step) * step : Number(v.toFixed(2));
+    };
+    // Already converted above, so print the number as-is.
+    const show = (v) =>
+        `${Number(v || 0).toLocaleString("en-US", step > 0
+            ? { maximumFractionDigits: 0 }
+            : { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+
     let html = "";
 
     cart.forEach((item, index) => {
+        const qty = Number(item.qty ?? item.quantity ?? 0);
+        const price = Number(item.price ?? item.sell_price ?? 0);
+        // discount_price is the unit price AFTER its line discount.
+        const netUnit = Number(item.discount_price ?? price);
+        const vatRate = Number(item.vat ?? 0);
+
+        const priceDisp = unitDisp(price);
+        const netDisp = unitDisp(netUnit);
+        const vatDisp = unitDisp((netUnit * vatRate) / 100);
+
+        const lineDiscount = (priceDisp - netDisp) * qty;
+        const lineVat = vatDisp * qty;
+        const lineGrand = netDisp * qty + lineVat;
+
         html += `
             <tr class="hover:bg-gray-50">
                 <td class="px-4 py-3">${index + 1}</td>
-                <td class="px-4 py-3">${item.code ?? item.item_code ?? ""}</td>
                 <td class="px-4 py-3 font-medium text-gray-800">${item.name ?? ""}</td>
-                <td class="px-4 py-3 text-right">${formatQty(item.qty ?? item.quantity ?? 0)}</td>
-                <td class="px-4 py-3 text-right">${formatCurrency(item.price ?? item.sell_price ?? 0, factor, currency)} ${currency}</td>
-                <td class="px-4 py-3 text-right">${formatCurrency(item.discount_amount ?? 0, factor, currency)} ${currency}</td>
-                <td class="px-4 py-3 text-right">${formatCurrency(item.vat_amount ?? 0, factor, currency)} ${currency}</td>
-                <td class="px-4 py-3 text-right font-bold text-blue-600">
-                    ${formatCurrency(item.grand_total_amount ?? item.net_amount_line ?? 0, factor, currency)} ${currency}
-                </td>
+                <td class="px-4 py-3 text-right">${formatQty(qty)}</td>
+                <td class="px-4 py-3">${item.unit ?? ""}</td>
+                <td class="px-4 py-3 text-right">${show(priceDisp)}</td>
+                <td class="px-4 py-3 text-right">${show(lineDiscount)}</td>
+                <td class="px-4 py-3 text-right vat-col hidden">${show(lineVat)}</td>
+                <td class="px-4 py-3 text-right font-bold text-blue-600">${show(lineGrand)}</td>
             </tr>
         `;
     });
 
     document.getElementById("preview-line-data").innerHTML = html;
 
+    // The component's own key names. total_amount / discount_amount / vat_amount
+    // never existed on this object, so all three boxes printed 0 while only
+    // Grand Total — the one name that happened to match — was right.
     document.getElementById("preview-total").textContent =
-        `${formatCurrency(totals.total_amount ?? 0, factor, currency)} ${currency}`;
+        `${formatCurrency(totals.total_original ?? 0, factor, currency)} ${currency}`;
 
     document.getElementById("preview-discount").textContent =
-        `${formatCurrency(totals.discount_amount ?? 0, factor, currency)} ${currency}`;
+        `${formatCurrency(totals.total_discount ?? 0, factor, currency)} ${currency}`;
 
     document.getElementById("preview-vat").textContent =
-        `${formatCurrency(totals.vat_amount ?? 0, factor, currency)} ${currency}`;
+        `${formatCurrency(totals.total_vat_amount ?? 0, factor, currency)} ${currency}`;
 
     document.getElementById("preview-grand").textContent =
         `${formatCurrency(totals.grand_total ?? 0, factor, currency)} ${currency}`;

@@ -211,17 +211,49 @@ class PurchaseCart extends Component
      * vendor go to the browser, which shows them line by line before anything is
      * printed. Needs no permission; nothing here posts a GRN.
      */
+    /**
+     * The selected vendor's name, or '' when nobody is selected.
+     *
+     * vendor_name defaults to "General vendor" — the screen's placeholder for an
+     * unselected vendor, not a real one. Previews show blank instead, so the
+     * user types a name rather than clearing a placeholder, and no document goes
+     * out addressed to it. Mirrors Cart::realCustomerName().
+     */
+    private function realVendorName(): string
+    {
+        $name = trim((string) ($this->vendor_name ?? ''));
+
+        return strcasecmp($name, 'General vendor') === 0 ? '' : $name;
+    }
+
     public function openPurchasePreview()
     {
+        // The button is always on screen now, so an empty cart is reported here
+        // instead of opening a modal with nothing in it.
+        if (empty($this->cart)) {
+            $this->dispatch('app-error', ['message' => 'សូមជ្រើសរើស ទំនិញជាមុនសិន']);
+            return;
+        }
+
+        // Today's riel rate, sent alongside the screen's own currency so the
+        // preview can be flipped between $ and ៛ even when the purchase screen
+        // is set to dollars. Not firstOrFail(): a shop with no riel row should
+        // still get a preview, just without the toggle.
+        $riel = Currency::where('code', '៛')->first();
+
         $this->dispatch('open-purchase-preview', [
             'cart'           => array_values($this->cart),
             'totals'         => $this->totals,
             'factor'         => $this->factor,
             'currency_name'  => $this->currency_name,
+            'riel_factor'    => (float) ($riel->factor ?? 0),
+            'riel_code'      => $riel->code ?? '៛',
             'deposit_amount' => $this->deposit_amount,
             'grn_date'       => $this->grn_date,
             'vendor'         => [
-                'name'    => $this->vendor_name,
+                // Blank, not the "General vendor" placeholder — the preview
+                // opens empty so a vendor can be typed or searched for.
+                'name'    => $this->realVendorName(),
                 'phone'   => $this->vendor_phone,
                 'address' => $this->vendor_address1,
             ],
@@ -241,7 +273,7 @@ class PurchaseCart extends Component
      * issued: printing a real-looking GRN number on an unposted receipt invites
      * someone to book stock against it.
      */
-    public function previewPurchase()
+    public function previewPurchase($payload = [])
     {
         if (empty($this->cart)) {
             $this->dispatch('app-error', ['message' => 'Cart is empty!']);
@@ -250,6 +282,19 @@ class PurchaseCart extends Component
 
         $riel = $this->getRielCurrency();
         $precision = 6;
+
+        // The printed form follows the preview's currency switch, so the same
+        // cart can be handed to a vendor in riel or in dollars. Falls back to
+        // riel — what this printed before the switch existed. Checked against
+        // <= 0 rather than ??, since a factor of 1 is a real choice (dollars)
+        // and must not be mistaken for "not provided".
+        $viewFactor   = (float) ($payload['view_factor'] ?? 0);
+        $viewCurrency = (string) ($payload['view_currency'] ?? '');
+
+        if ($viewFactor <= 0) {
+            $viewFactor   = (float) $riel->factor;
+            $viewCurrency = $riel->code;
+        }
 
         $lines = [];
         foreach ($this->cart as $item) {
@@ -271,18 +316,21 @@ class PurchaseCart extends Component
 
         $this->dispatch('purchase-preview', [
             'no'             => 'PREVIEW',
+            // ?: not ?? — the preview form always sends these keys, blank when
+            // untouched, so an empty string must fall back to the selected
+            // vendor rather than counting as "provided" and printing nothing.
             'vendor'         => [
-                'name'     => $this->vendor_name,
-                'phone1'   => $this->vendor_phone,
-                'address1' => $this->vendor_address1,
+                'name'     => ($payload['vendor_name'] ?? '') ?: $this->realVendorName(),
+                'phone1'   => ($payload['vendor_phone'] ?? '') ?: ($this->vendor_phone ?: ''),
+                'address1' => ($payload['vendor_address'] ?? '') ?: ($this->vendor_address1 ?: ''),
             ],
             'lines'          => $lines,
             // No warehouse picked yet is normal when previewing — the receiving
             // site is only required to post.
             'location_name'  => ($this->warehouse_id ? Warehouse::find($this->warehouse_id)?->name : null) ?? '-',
             'created_by'     => Auth::user()->username ?? 'NA',
-            'factor'         => $riel->factor,
-            'currency_name'  => $riel->code,
+            'factor'         => $viewFactor,
+            'currency_name'  => $viewCurrency,
             'deposit_amount' => round((float) $this->deposit_amount, $precision),
             'remark'         => $this->remark,
             'shop'           => \App\Http\Controllers\PurchasingController::shopProfileForPrint(Auth::user()->username ?? null),
@@ -550,6 +598,10 @@ class PurchaseCart extends Component
             $this->count_cart = 0;
             $this->warehouse_id = '';
             $this->deposit_amount = 0;
+            // The receipt is done, so the next one starts from nobody. Without
+            // this the previous vendor stayed selected and the following GRN
+            // could be posted against them by accident.
+            $this->resetVendor();
             $this->dispatch('success', [
                 'message'      => 'GRN Posted Successfully!',
                 'document_no'  => $documentNo,
@@ -646,11 +698,33 @@ class PurchaseCart extends Component
         $this->count_cart = 0;
         $this->generatedLots = [];
 
-        $this->vendor_name = '';
-        $this->vendor_id = null;
+        $this->resetVendor();
         $this->dispatch('cart-cleared', [
             'message' => 'Cart has been cleared'
         ]);
+    }
+
+    /**
+     * Forget the selected vendor, every field of them.
+     *
+     * Shared by clearCart() and post_grn() so the two cannot drift: clearing
+     * only name and id left the phone, address and contact behind, which then
+     * printed on the NEXT purchase under a different vendor's name.
+     *
+     * vendor_name goes to '' rather than back to the 'General vendor' default —
+     * realVendorName() treats both as "nobody selected", and '' is what the
+     * search box shows as empty.
+     */
+    private function resetVendor(): void
+    {
+        $this->vendor_id = null;
+        $this->vendor_name = '';
+        $this->vendor_phone = '';
+        $this->vendor_address1 = '';
+        $this->vendor_address2 = '';
+        $this->vendor_contact_name = '';
+        $this->vendor_contact_phone = '';
+        $this->vendor_city = '';
     }
     public function mount()
     {

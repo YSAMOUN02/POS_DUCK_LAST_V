@@ -42,7 +42,6 @@ class TruncateData extends Command
         'ledger'    => ['item_ledger_entries'],
         'sales'     => ['sale_order_headers', 'sale_order_lines', 'sale_invoice_headers', 'sale_invoice_lines'],
         'purchases' => ['purchase_headers', 'purchase_lines'],
-        'quotes'    => ['quotations', 'quotation_lines'],
         'expenses'  => ['expenses'],
         'queues'    => ['table_queues'],
         'system'    => ['cache', 'cache_locks', 'jobs', 'job_batches', 'failed_jobs', 'sessions'],

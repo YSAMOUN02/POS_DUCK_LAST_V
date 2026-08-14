@@ -1622,13 +1622,10 @@ class Cart extends Component
 
 
 
-    // Both drive updateQuotation() / sale-order updates by id, so neither may be
-    // settable from the client. updateQuotation() deletes and rewrites the
-    // quotation's lines, which made a writable id destructive.
+    // Drives sale-order updates by id, so it must not be settable from the
+    // client — a writable id would let the browser retarget the write.
     #[Locked]
     public $loaded_sale_order_id = null;
-    #[Locked]
-    public $loaded_quotation_id = null;
 
     #[\Livewire\Attributes\On('load-sale-order-to-cart')]
     public function loadSaleOrderToCart($saleOrderId)
@@ -2350,11 +2347,6 @@ class Cart extends Component
                 $this->getDocument($this->cart_queue_no);
             });
 
-            if ($this->loaded_quotation_id) {
-                Quotation::where('id', $this->loaded_quotation_id)->update(['status' => 'Completed']);
-                $this->loaded_quotation_id = null;
-            }
-
             $this->dispatch('ordered', [
                 'message' => 'Deposit ' . $saleOrderNo . ' បានរក្សាទុក និងដកស្តុករួច ',
             ]);
@@ -2514,17 +2506,6 @@ class Cart extends Component
         }
     }
 
-    public function openQuotationPreview()
-    {
-        $this->dispatch(
-            'open-quotation-preview',
-            cart: $this->cart,
-            totals: $this->totals,
-            factor: $this->factor,
-            currency: $this->currency,
-            previewOnly: false,
-        );
-    }
 
     /**
      * The same modal the Quote button opens, minus the quotation.
@@ -2539,53 +2520,39 @@ class Cart extends Component
      */
     public function openDocumentPreview()
     {
+        // Today's riel rate, sent alongside the POS's own currency so the
+        // preview can be flipped between $ and ៛ even when the POS is set to
+        // dollars. Not firstOrFail(): a shop with no riel row should still get
+        // a preview, just without the toggle.
+        $riel = Currency::where('code', '៛')->first();
+
         $this->dispatch(
             'open-quotation-preview',
             cart: $this->cart,
             totals: $this->totals,
             factor: $this->factor,
             currency: $this->currency,
+            rielFactor: (float) ($riel->factor ?? 0),
+            rielCode: $riel->code ?? '៛',
+            // Whoever is selected in the POS, so the form opens showing them
+            // rather than blank — and stays editable, since a preview is often
+            // run for a customer who is not on file yet.
+            customer: [
+                // customer_id holds the customer_code — the same value
+                // selectcustomer() looks up — so the preview can show who is
+                // selected and hand the choice back unchanged.
+                'id'      => $this->customer_id ?: '',
+                // Blank, not the "Walk-in Customer" placeholder — the preview
+                // form opens empty so the user can type a real name, instead of
+                // having to clear a value that only means "nobody picked yet".
+                'name'    => $this->realCustomerName(),
+                'phone'   => $this->customer_phone ?: '',
+                'address' => $this->customer_address1 ?: '',
+            ],
             previewOnly: true,
         );
     }
 
-    /**
-     * Build the quotation exactly as saveQuotation would, but write nothing and
-     * hand it straight to the printer.
-     *
-     * Listens on 'previewQuotation'. The attribute here used to read
-     * #[On('saveQuotation')], which wired the SAVE event to this method and left
-     * saveQuotation() with no listener at all — pressing "Save Quotation" only
-     * printed a preview and stored nothing, and the Preview button did nothing,
-     * since a dispatched Livewire event only reaches a matching #[On].
-     *
-     * No permission check: this renders the caller's OWN cart, reads no stored
-     * document, issues no number and writes nothing, so a user who may not raise
-     * a quotation can still show a customer what the figures come to. Issuing
-     * one is still gated — see saveQuotation().
-     *
-     * The per-line arithmetic mirrors saveQuotation on purpose — a preview that
-     * totals differently from the document it previews is worse than none.
-     */
-    #[On('previewQuotation')]
-    public function previewQuotation($payload = [])
-    {
-        $figures = $this->previewFigures();
-
-        if ($figures === null) {
-            return;
-        }
-
-        $this->dispatch('quotation-preview', [
-            'header' => [
-                // No number is issued — nothing was saved, and printing a real
-                // looking quotation number on an unsaved document invites someone
-                // to quote against it.
-                'quotation_no'    => 'PREVIEW',
-            ] + $this->previewCustomer($payload) + $figures['totals'],
-            'lines' => $figures['lines'],
-        ]);
-    }
 
     /**
      * The same preview, on the INVOICE form rather than the quotation form.
@@ -2610,6 +2577,23 @@ class Cart extends Component
 
         $totals = $figures['totals'];
 
+        // The printed form follows the preview's currency switch. The name is
+        // derived from the factor rather than sent, because the modal labels
+        // dollars "USD" while the printed form wants "$". Falls back to the
+        // POS's own currency — what this printed before the switch existed.
+        // Checked against <= 0 rather than ??, since a factor of 1 is a real
+        // choice (dollars) and must not be mistaken for "not provided".
+        $viewFactor = (float) ($payload['view_factor'] ?? 0);
+
+        if ($viewFactor > 0) {
+            $viewCurrency = $viewFactor > 1
+                ? (Currency::where('code', '៛')->value('code') ?? '៛')
+                : '$';
+        } else {
+            $viewFactor   = (float) $this->factor;
+            $viewCurrency = $this->currency_name;
+        }
+
         $this->dispatch('invoice-preview', [
             'header' => [
                 'document_no'    => 'PREVIEW',
@@ -2617,8 +2601,8 @@ class Cart extends Component
                 // The invoice form prints its money through the document's own
                 // factor, so it has to travel with the payload — without it a
                 // riel cart would print its figures as dollars.
-                'factor'         => $this->factor,
-                'currency_name'  => $this->currency_name,
+                'factor'         => $viewFactor,
+                'currency_name'  => $viewCurrency,
                 // Nothing is paid on a cart that has not been through payment, so
                 // the form prints Deposit 0 and the full balance as still owed.
                 'payment_status' => 'Unpaid',
@@ -2638,14 +2622,35 @@ class Cart extends Component
      * The two forms name this field differently — the quotation reads
      * customer_name, the invoice reads contact_name.
      */
+    /**
+     * The selected customer's name, or '' when nobody is selected.
+     *
+     * customer_name defaults to "Walk-in Customer" — the POS's placeholder for
+     * an unselected customer, not a real one. Previews (both the form and the
+     * printed page) show blank instead, so the user types a name rather than
+     * clearing a placeholder, and no document goes out addressed to it.
+     */
+    private function realCustomerName(): string
+    {
+        $name = trim((string) ($this->customer_name ?? ''));
+
+        return strcasecmp($name, 'Walk-in Customer') === 0 ? '' : $name;
+    }
+
     private function previewCustomer(array $payload, bool $invoice = false): array
     {
-        $name = $payload['customer_name'] ?? ($this->customer_name ?: 'Walk-in Customer');
+        // ?: not ?? — the preview form always POSTs these keys, sending '' when
+        // the user has not typed anything. With ?? an empty string counts as
+        // provided, so a customer picked in the POS was overwritten by blanks
+        // and the preview printed nothing for phone or address.
+        // A preview left blank prints blank — realCustomerName() drops the
+        // "Walk-in Customer" placeholder.
+        $name = ($payload['customer_name'] ?? '') ?: $this->realCustomerName();
 
         return [
             $invoice ? 'contact_name' : 'customer_name' => $name,
-            'phone'   => $payload['customer_phone'] ?? ($this->customer_phone ?? ''),
-            'address' => $payload['customer_address'] ?? ($this->customer_address1 ?? ''),
+            'phone'   => ($payload['customer_phone'] ?? '') ?: ($this->customer_phone ?: ''),
+            'address' => ($payload['customer_address'] ?? '') ?: ($this->customer_address1 ?: ''),
             'remarks' => $payload['remark'] ?? '',
         ];
     }
@@ -2704,363 +2709,6 @@ class Cart extends Component
                 'grand_total'     => round($totalAmount - $totalDiscount + $totalVAT, 4),
             ],
         ];
-    }
-
-    #[On('saveQuotation')]
-    public function saveQuotation($payload)
-    {
-        abort_unless(Auth::user()->hasPermission('quotation.create'), 403);
-
-        if (empty($this->cart)) {
-            $this->dispatch('payment-error', ['message' => 'Cart is empty']);
-            return;
-        }
-
-        $quotationNo = '';
-        $quotationId = null;
-        try {
-            DB::transaction(function () use ($payload, &$quotationNo, &$quotationId) {
-
-                $totalAmount = 0;
-                $totalDiscount = 0;
-                $totalVAT = 0;
-
-                $customer_id = !empty($payload['customer_id']) ? (int) $payload['customer_id'] : null;
-                $customer_name = $payload['customer_name'] ?? 'Walk-in Customer';
-                $customer_phone = $payload['customer_phone'] ?? 'NA';
-                $customer_address = $payload['customer_address'] ?? null;
-
-                $quotationNo = $this->generateQuotationNo();
-
-                $quotation = Quotation::create([
-                    'quotation_no'     => $quotationNo,
-
-                    'customer_id'      => $customer_id,
-                    'customer_name'    => $customer_name,
-                    'phone'            => $customer_phone,
-                    'address'          => $customer_address,
-
-                    'quotation_date'   => $payload['quotation_date'] ?? now()->toDateString(),
-                    'valid_until'      => $payload['valid_until'] ?? null,
-
-                    'total_amount'     => 0,
-                    'vat_amount'       => 0,
-                    'discount_percent' => $payload['discount_percent'] ?? 0,
-                    'discount_amount'  => 0,
-                    'grand_total'      => 0,
-
-                    'status'           => 'Quotation',
-
-                    // Quotations always store the real transaction currency (USD).
-                    // Riel (or any other DB currency) is only a display/input
-                    // convenience in the cart UI — it never changes what's saved.
-                    'currency_name'    => 'USD',
-                    'factor'           => 1,
-
-                    'remarks'          => $payload['remark'] ?? null,
-                    'created_by'       => Auth::user()->username ?? 'System',
-                    'created_user_id'  => (string) Auth::id(),
-                ]);
-
-                $quotationId = $quotation->id;
-
-                $linesWritten = 0;
-                foreach ($this->cart as $cartItem) {
-                    $product = $this->requireProduct($cartItem['id']);
-                    $linesWritten++;
-
-                    $qty = max(0.01, (float) ($cartItem['qty'] ?? 1));
-                    $sellPrice = (float) ($cartItem['price'] ?? $cartItem['sell_price'] ?? 0);
-                    $vatRate = (float) ($cartItem['vat'] ?? 0);
-                    $discountPercent = (float) ($cartItem['discount_percent'] ?? 0);
-
-                    $unitCost = (float) ($product->cost ?? 0);
-                    $unitPrice = (float) ($product->sell_price ?? 0);
-
-                    $lineAmount = round($sellPrice * $qty, 4);
-                    $discountAmount = round(($lineAmount * $discountPercent) / 100, 4);
-                    $netAmount = round($lineAmount - $discountAmount, 4);
-                    $vatAmount = round(($netAmount * $vatRate) / 100, 4);
-                    $lineGrandTotal = round($netAmount + $vatAmount, 4);
-
-                    $totalAmount += $lineAmount;
-                    $totalDiscount += $discountAmount;
-                    $totalVAT += $vatAmount;
-
-                    QuotationLine::create([
-                        'quotation_id'       => $quotation->id,
-                        'product_id'         => $product->id,
-
-                        'barcode'            => $product->bar_code,
-                        'item_code'          => $product->code,
-                        'name'               => $product->name,
-                        'variant'            => $product->variant,
-                        'description'        => $product->description,
-
-                        'quantity'           => $qty,
-                        'unit'               => $cartItem['unit'] ?? ($product->unit ?? 'NA'),
-                        'category_name'      => optional($product->category)->name,
-
-                        'cost'               => $unitCost,
-                        'unit_price'         => $unitPrice,
-                        'sell_price'         => $sellPrice,
-
-                        'discount_percent'   => $discountPercent,
-                        'discount_amount'    => $discountAmount,
-
-                        'line_amount'        => $lineAmount,
-                        'vat'                => $vatRate,
-                        'vat_amount'         => $vatAmount,
-                        'net_amount'         => $netAmount,
-                        'grand_total_amount' => $lineGrandTotal,
-
-                        'created_by'         => Auth::user()->username ?? 'System',
-                    ]);
-                }
-
-                $grandTotal = round($totalAmount - $totalDiscount + $totalVAT, 4);
-
-                $this->assertLinesWritten($linesWritten, $quotation->quotation_no);
-
-                $quotation->update([
-                    'total_amount'    => $totalAmount,
-                    'vat_amount'      => $totalVAT,
-                    'discount_amount' => $totalDiscount,
-                    'grand_total'     => $grandTotal,
-                ]);
-            });
-
-            $this->new_cart = true;
-            $this->cart = [];
-            $this->count_cart = 0;
-            $this->loaded_quotation_id = null;
-
-            $this->dispatch('quotation-saved', [
-                'message' => 'Quotation saved : ' . $quotationNo,
-                'id'      => $quotationId,
-            ]);
-        } catch (\Throwable $e) {
-            $this->dispatch('payment-error', [
-                'message' => $e->getMessage(),
-            ]);
-        }
-    }
-
-    #[On('updateQuotation')]
-    public function updateQuotation($payload)
-    {
-        abort_unless(Auth::user()->hasPermission('quotation.edit'), 403);
-
-        if (empty($this->cart)) {
-            $this->dispatch('payment-error', ['message' => 'Cart is empty']);
-            return;
-        }
-
-        if (!$this->loaded_quotation_id) {
-            $this->dispatch('payment-error', ['message' => 'No quotation loaded to update']);
-            return;
-        }
-
-        try {
-            DB::transaction(function () use ($payload) {
-                $quotation = Quotation::findOrFail($this->loaded_quotation_id);
-
-                $totalAmount = 0;
-                $totalDiscount = 0;
-                $totalVAT = 0;
-
-                $quotation->lines()->delete();
-
-                $linesWritten = 0;
-                foreach ($this->cart as $cartItem) {
-                    $product = $this->requireProduct($cartItem['id']);
-                    $linesWritten++;
-
-                    $qty = max(0.01, (float) ($cartItem['qty'] ?? 1));
-                    $sellPrice = (float) ($cartItem['price'] ?? $cartItem['sell_price'] ?? 0);
-                    $vatRate = (float) ($cartItem['vat'] ?? 0);
-                    $discountPercent = (float) ($cartItem['discount_percent'] ?? 0);
-
-                    $unitCost = (float) ($product->cost ?? 0);
-                    $unitPrice = (float) ($product->sell_price ?? 0);
-
-                    $lineAmount = round($sellPrice * $qty, 4);
-                    $discountAmount = round(($lineAmount * $discountPercent) / 100, 4);
-                    $netAmount = round($lineAmount - $discountAmount, 4);
-                    $vatAmount = round(($netAmount * $vatRate) / 100, 4);
-                    $lineGrandTotal = round($netAmount + $vatAmount, 4);
-
-                    $totalAmount += $lineAmount;
-                    $totalDiscount += $discountAmount;
-                    $totalVAT += $vatAmount;
-
-                    QuotationLine::create([
-                        'quotation_id'       => $quotation->id,
-                        'product_id'         => $product->id,
-
-                        'barcode'            => $product->bar_code,
-                        'item_code'          => $product->code,
-                        'name'               => $product->name,
-                        'variant'            => $product->variant,
-                        'description'        => $product->description,
-
-                        'quantity'           => $qty,
-                        'unit'               => $cartItem['unit'] ?? ($product->unit ?? 'NA'),
-                        'category_name'      => optional($product->category)->name,
-
-                        'cost'               => $unitCost,
-                        'unit_price'         => $unitPrice,
-                        'sell_price'         => $sellPrice,
-
-                        'discount_percent'   => $discountPercent,
-                        'discount_amount'    => $discountAmount,
-
-                        'line_amount'        => $lineAmount,
-                        'vat'                => $vatRate,
-                        'vat_amount'         => $vatAmount,
-                        'net_amount'         => $netAmount,
-                        'grand_total_amount' => $lineGrandTotal,
-
-                        'created_by'         => Auth::user()->username ?? 'System',
-                    ]);
-                }
-
-                $grandTotal = round($totalAmount - $totalDiscount + $totalVAT, 4);
-
-                $this->assertLinesWritten($linesWritten, $quotation->quotation_no);
-
-                $quotation->update([
-                    'customer_id'      => !empty($payload['customer_id']) ? (int) $payload['customer_id'] : $quotation->customer_id,
-                    'customer_name'    => $payload['customer_name'] ?? $quotation->customer_name,
-                    'phone'            => $payload['customer_phone'] ?? $quotation->phone,
-                    'address'          => $payload['customer_address'] ?? $quotation->address,
-
-                    'total_amount'     => $totalAmount,
-                    'vat_amount'       => $totalVAT,
-                    'discount_amount'  => $totalDiscount,
-                    'grand_total'      => $grandTotal,
-
-                    'remarks'          => $payload['remark'] ?? $quotation->remarks,
-                ]);
-            });
-
-            $quotationId = $this->loaded_quotation_id;
-            $quotationNo = Quotation::find($quotationId)?->quotation_no;
-
-            $this->new_cart = true;
-            $this->cart = [];
-            $this->count_cart = 0;
-            $this->loaded_quotation_id = null;
-
-            $this->dispatch('quotation-saved', [
-                'message' => 'Quotation updated : ' . $quotationNo,
-                'id'      => $quotationId,
-            ]);
-        } catch (\Throwable $e) {
-            $this->dispatch('payment-error', [
-                'message' => $e->getMessage(),
-            ]);
-        }
-    }
-
-    private function generateQuotationNo()
-    {
-        return Serial_No::next('quotation');
-    }
-
-    #[On('load-quotation-to-cart')]
-    public function loadQuotationToCart($quotationId)
-    {
-        $quotation = Quotation::with(['lines.product.warehouses'])->find($quotationId);
-
-        if (!$quotation) {
-            $this->dispatch('app-error', [
-                'message' => 'Quotation not found'
-            ]);
-            return;
-        }
-
-        if ($quotation->status !== 'Quotation') {
-            $this->dispatch('app-error', [
-                'message' => 'This quotation is already ' . strtolower($quotation->status) . ' and cannot be loaded again'
-            ]);
-            return;
-        }
-
-        $this->factor = $quotation->factor;
-        $this->currency = $quotation->currency_name;
-        $this->currency_name = $quotation->currency_name;
-
-        if ($this->new_cart && $this->cart_queue_no == 0) {
-            $this->cart_queue_no = $this->incrementQueueTable();
-            $this->getDocument($this->cart_queue_no);
-            $this->new_cart = false;
-        }
-
-        $this->cart = [];
-        $this->cart_mode = 'sale';
-        $this->loaded_quotation_id = $quotation->id;
-
-        $this->customer_id = $quotation->customer_id;
-        $this->customer_name = $quotation->customer_name ?? 'Walk-in Customer';
-        $this->customer_phone = $quotation->phone ?? '';
-        $this->customer_address1 = $quotation->address ?? '';
-        $this->customer_address2 = '';
-        $this->customer_contact_name = $quotation->customer_name ?? '';
-        $this->customer_contact_phone = $quotation->phone ?? '';
-
-        foreach ($quotation->lines as $line) {
-            $product = $line->product;
-
-            $qty = (float) ($line->quantity ?? 1);
-            $price = (float) ($line->sell_price ?? $product?->sell_price ?? 0);
-            $discountPercent = (float) ($line->discount_percent ?? $product?->discount_percent ?? 0);
-            $vat = (float) ($line->vat ?? $product?->vat ?? 0);
-
-            $stock = $product?->warehouses?->sum(function ($wh) {
-                return (float) ($wh->pivot->qty ?? 0);
-            }) ?? 0;
-
-            $discountAmount = ($price * $discountPercent) / 100;
-            $netPrice = $price - $discountAmount;
-            $vatAmount = ($netPrice * $vat) / 100;
-
-            $this->cart[] = [
-                'id' => $line->product_id,
-                'code' => $product?->code ?? '',
-                'name' => $product?->name ?? $line->name,
-                'type' => $product?->type ?? 'product',
-
-                'price' => $price,
-                'qty' => $qty,
-
-                'discount_percent' => $discountPercent,
-                'discount_price' => $netPrice,
-
-                'order_no' => count($this->cart) + 1,
-
-                'amount_line' => $qty * $price,
-                'discount_amount_line' => $qty * $discountAmount,
-                'net_amount_line' => $qty * $netPrice,
-                'vat_amount_line' => $qty * $vatAmount,
-
-                'vat' => $vat,
-                'stock' => $stock,
-                'unit' => $product?->unit ?? $line->unit ?? 'NA',
-                'track_stock' => $product?->track_stock ?? 0,
-            ];
-        }
-
-        $this->count_cart = count($this->cart);
-
-        $this->dispatch('load-quotation', [
-            'message' => 'Quotation loaded to cart successfully',
-            'header' => $quotation,
-            'cart' => $this->cart,
-            'totals' => $this->totals,
-            'factor' => $this->factor,
-            'currency' => $this->currency,
-        ]);
     }
 
 

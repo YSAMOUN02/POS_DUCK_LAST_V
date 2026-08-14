@@ -20,7 +20,6 @@ use App\Http\Controllers\WarehouseController;
 use App\Http\Controllers\BinController;
 use App\Http\Controllers\ItemLedgerEntryController;
 use App\Http\Controllers\SaleOrderController;
-use App\Http\Controllers\QuotationController;
 
 
 use App\Http\Controllers\GainCostController;
@@ -125,6 +124,8 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/products/store', [ProductController::class, 'store'])->name('products.store')->middleware('permission:product.create');
     Route::get('/products/search', [ProductController::class, 'search'])->name('products.search')->middleware('permission:product.view');
     Route::get('/products/list_search', [ProductController::class, 'list_search'])->middleware('permission:product.view');
+    // Suggested next code for a prefixed series (FG-0023 -> FG-0024).
+    Route::get('/products/next-code', [ProductController::class, 'nextCode'])->middleware('permission:product.create');
     Route::put('/product/{id}', [ProductController::class, 'update'])->name('product.update')->middleware('permission:product.edit');
 
 
@@ -187,11 +188,6 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/update-sale-order-status', [SaleOrderController::class, 'updateStatus'])
         ->name('sale-order.update-status')->middleware('permission:pos_sale.sell');
 
-    // Quotations
-    Route::get('/quotations', [QuotationController::class, 'index'])->middleware('permission:quotation.view');
-    Route::get('/quotations/{id}', [QuotationController::class, 'show'])->middleware('permission:quotation.view');
-    Route::post('/quotations/update-status', [QuotationController::class, 'updateStatus'])
-        ->name('quotations.update-status')->middleware('permission:quotation.edit');
     // routes/web.php
     Route::post('/sale-order/mark-all-delivered', [SaleOrderController::class, 'markAllDelivered'])->middleware('permission:pos_sale.mark_delivered');
     // Settles every unpaid order in the caller's CURRENT filtered view — the

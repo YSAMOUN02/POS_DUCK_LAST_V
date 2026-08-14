@@ -144,7 +144,9 @@ public function search(Request $request)
             });
         })
         ->limit(10)
-        ->get(['id', 'code', 'name']);
+        // phone1/address1 so a picker can fill contact details, not just the
+        // name — the purchase preview blanked them without these.
+        ->get(['id', 'code', 'name', 'phone1', 'address1']);
 
     return response()->json($vendors);
 }

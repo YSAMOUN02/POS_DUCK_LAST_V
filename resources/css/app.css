@@ -109,3 +109,9 @@
         font-size: 16px;
     }
 }
+
+/* VAT columns are marked .vat-col and hidden with Tailwind's own `hidden`
+   class, so no rebuild is needed to take effect. .vat-col carries no styling —
+   it exists so every VAT cell can be found in one search when VAT is wanted
+   back: strip the `hidden` beside it on both the <th> and its matching <td>.
+   The values are still calculated and stored, only not displayed. */

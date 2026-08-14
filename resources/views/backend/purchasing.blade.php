@@ -1696,43 +1696,80 @@
                     <p class="text-sm text-slate-300">Preview this cart — nothing is posted</p>
                 </div>
 
-                <button type="button" onclick="closePurchasePreviewModal()" class="modal-close-btn">
-                    &times;
-                </button>
+                <div class="flex items-center gap-3">
+                    {{-- View-only currency switch. Unlike the Purchase Details
+                         modal, which converts at the rate stored on the posted
+                         document, nothing is posted yet — so this uses today's
+                         riel rate. It re-renders the amounts on screen and does
+                         not touch the cart: the GRN still posts in USD. --}}
+                    {{-- Hidden by an inline style, not `hidden`: both that and
+                         `inline-flex` set display, and which one wins depends on
+                         Tailwind's output order rather than on the attribute. --}}
+                    <button type="button" id="btn-toggle-purchase-preview-currency"
+                        onclick="togglePurchasePreviewCurrency()" style="display:none"
+                        class="inline-flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20">
+                        <i class="fa-solid fa-money-bill-transfer"></i>
+                        {{-- The label is rebuilt in JS on every flip, so the
+                             translated prefix is carried here rather than being
+                             hardcoded in English there. --}}
+                        <span id="purchase-preview-currency-label" data-view-in="{{ __('View in') }}">
+                            {{ __('View in') }} ៛
+                        </span>
+                    </button>
+
+                    <button type="button" onclick="closePurchasePreviewModal()" class="modal-close-btn">
+                        &times;
+                    </button>
+                </div>
             </div>
 
             {{-- Body --}}
             <div class="max-h-[80vh] space-y-4 overflow-y-auto bg-slate-50 p-4">
 
                 {{-- Vendor Info --}}
-                <div class="overflow-hidden rounded-2xl border bg-white shadow-sm">
+                {{-- overflow-visible: see the sale preview — a clipping ancestor
+                     cuts off the absolutely positioned vendor suggestions.
+                     relative z-30 keeps the card above the lines card below, so
+                     that card's header cannot paint over the suggestions. --}}
+                <div class="relative z-30 overflow-visible rounded-2xl border bg-white shadow-sm">
                     <div class="flex items-center gap-2 border-b bg-white px-4 py-3">
                         <i class="fa-solid fa-user-tie text-gray-400"></i>
-                        <h3 class="font-bold text-gray-800">Vendor Info</h3>
+                        <h3 class="font-bold text-gray-800">{{ __("Vendor Info") }}</h3>
                     </div>
 
                     <div class="grid grid-cols-2 gap-2 p-3 text-sm lg:grid-cols-4">
-                        <div>
-                            <label class="text-xs text-gray-500">Vendor</label>
-                            <input type="text" id="purchase-preview-vendor" readonly
-                                class="mt-0.5 w-full rounded-xl border-gray-300 bg-gray-50 px-3 py-1.5 text-sm shadow-sm outline-none">
+                        {{-- Editable, like the customer fields on the sale preview:
+                             a preview is often run for a vendor not yet on file, and
+                             nothing here is saved. --}}
+                        {{-- Same search + suggest as the vendor box on the purchase
+                             screen, and picking one here selects it there too. --}}
+                        <div class="relative">
+                            <label class="text-xs text-gray-500">{{ __("Search Vendor") }}</label>
+                            <i
+                                class="fa-solid fa-magnifying-glass absolute left-3 top-[30px] text-gray-400 text-xs"></i>
+                            <input type="text" id="purchase-preview-vendor" autocomplete="off"
+                                placeholder="{{ __('Search by code or name...') }}"
+                                class="mt-0.5 w-full rounded-xl border-gray-300 bg-white pl-9 pr-3 py-1.5 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100">
+                            <ul id="purchase-preview-vendor-list"
+                                class="hidden absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-auto
+                                       rounded-xl border border-gray-200 bg-white shadow-lg"></ul>
                         </div>
                         <div>
-                            <label class="text-xs text-gray-500">Phone</label>
-                            <input type="text" id="purchase-preview-phone" readonly
-                                class="mt-0.5 w-full rounded-xl border-gray-300 bg-gray-50 px-3 py-1.5 text-sm shadow-sm outline-none">
+                            <label class="text-xs text-gray-500">{{ __("Phone") }}</label>
+                            <input type="text" id="purchase-preview-phone"
+                                class="mt-0.5 w-full rounded-xl border-gray-300 bg-white px-3 py-1.5 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100">
                         </div>
                         <div>
-                            <label class="text-xs text-gray-500">Address</label>
-                            <input type="text" id="purchase-preview-address" readonly
-                                class="mt-0.5 w-full rounded-xl border-gray-300 bg-gray-50 px-3 py-1.5 text-sm shadow-sm outline-none">
+                            <label class="text-xs text-gray-500">{{ __("Address") }}</label>
+                            <input type="text" id="purchase-preview-address"
+                                class="mt-0.5 w-full rounded-xl border-gray-300 bg-white px-3 py-1.5 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-100">
                         </div>
                         <div>
                             {{-- Editable, like the customer fields on the sale
                                  preview: it is the date the printed document
                                  carries, and previewing is when you notice it is
                                  wrong. --}}
-                            <label class="text-xs text-gray-500">GRN Date</label>
+                            <label class="text-xs text-gray-500">{{ __("GRN Date") }}</label>
                             <input type="date" id="purchase-preview-date"
                                 class="mt-0.5 w-full rounded-xl border-gray-300 px-3 py-1.5 text-sm shadow-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-100 outline-none transition">
                         </div>
@@ -1755,9 +1792,9 @@
                                 <tr>
                                     <th class="px-4 py-3 text-left">#</th>
                                     <th class="px-4 py-3 text-left">{{ __('Item') }}</th>
-                                    <th class="px-4 py-3 text-left">{{ __('Unit') }}</th>
                                     <th class="px-4 py-3 text-left">{{ __('Lot') }}</th>
                                     <th class="px-4 py-3 text-right">{{ __('Qty') }}</th>
+                                    <th class="px-4 py-3 text-left">{{ __('Unit') }}</th>
                                     <th class="px-4 py-3 text-right">{{ __('Unit Cost') }}</th>
                                     <th class="px-4 py-3 text-right">{{ __('Total') }}</th>
                                 </tr>
@@ -1803,6 +1840,72 @@
                     class="flex items-center gap-2 rounded-xl bg-slate-600 px-4 py-2 font-medium text-white shadow-md transition hover:bg-slate-700">
                     <i class="fa-solid fa-eye"></i>
                     <span>{{ __('Preview') }}</span>
+                </button>
+
+                {{-- Posts the GRN and receives stock — the one action here that
+                     writes, so it carries the permission the old Purchase button
+                     had. Printing above stays open to everyone. --}}
+                @if (Auth::user()->hasPermission('purchasing.purchase'))
+                    <button type="button" onclick="confirmPurchaseFromPreview()"
+                        class="flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 font-medium text-white shadow-md transition hover:bg-green-700">
+                        <i class="fa-solid fa-cart-plus"></i>
+                        <span>{{ __('Confirm Purchase') }}</span>
+                    </button>
+                @endif
+            </div>
+        </div>
+    </div>
+
+    {{-- Shown before posting when something is missing. The two are not the same
+         kind of problem: a warehouse is required — post_grn rejects without one,
+         since received stock must land somewhere — while a missing vendor is
+         usually a slip but is allowed. So the warehouse blocks and the vendor
+         only asks. Stacked above the preview it is launched from. --}}
+    <div id="purchasePreflightModal" class="modal-overlay-sale-stacked hidden">
+        <div class="w-full max-w-md modal-card-sale animate-scaleUp">
+            <div class="flex items-start gap-3 p-6">
+                <div id="preflight-icon"
+                    class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                    <i class="fa-solid fa-triangle-exclamation text-lg"></i>
+                </div>
+                {{-- Both wordings are rendered here rather than written from JS,
+                     so every string still goes through __() and stays translated. --}}
+                <div class="min-w-0">
+                    <h3 class="text-lg font-bold text-gray-800">
+                        <span id="preflight-title-block" class="hidden">{{ __('Cannot post this purchase') }}</span>
+                        <span id="preflight-title-warn" class="hidden">{{ __('Check before posting') }}</span>
+                    </h3>
+
+                    <ul class="mt-2 space-y-1.5 text-sm">
+                        <li id="preflight-warehouse" class="hidden items-start gap-2 text-rose-600">
+                            <i class="fa-solid fa-circle-xmark mt-0.5"></i>
+                            <span>{{ __('Warehouse not selected — required to receive stock.') }}</span>
+                        </li>
+                        <li id="preflight-vendor" class="hidden items-start gap-2 text-amber-600">
+                            <i class="fa-solid fa-circle-exclamation mt-0.5"></i>
+                            <span>{{ __('Vendor not selected — the purchase will be recorded without one.') }}</span>
+                        </li>
+                    </ul>
+
+                    <p class="mt-3 text-sm text-gray-600">
+                        <span id="preflight-hint-block" class="hidden">
+                            {{ __('Close this and choose a warehouse to receive the stock into.') }}
+                        </span>
+                        <span id="preflight-hint-warn" class="hidden">{{ __('Continue anyway?') }}</span>
+                    </p>
+                </div>
+            </div>
+            <div class="flex justify-end gap-3 border-t bg-white px-6 py-4">
+                <button type="button" onclick="closePurchasePreflight()"
+                    class="rounded-xl bg-gray-200 px-4 py-2 font-medium text-gray-700 transition hover:bg-gray-300">
+                    {{ __('Cancel') }}
+                </button>
+                {{-- Hidden entirely when a warehouse is missing: there is nothing
+                     to continue to, so offering the button would only fail. --}}
+                <button type="button" id="preflight-continue" onclick="proceedPurchaseAnyway()"
+                    class="flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 font-medium text-white shadow-md transition hover:bg-green-700">
+                    <i class="fa-solid fa-check"></i>
+                    <span>{{ __('Continue') }}</span>
                 </button>
             </div>
         </div>

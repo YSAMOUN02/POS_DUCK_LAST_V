@@ -121,7 +121,12 @@ public function getSaleOrders(Request $request)
 }
     public function getSaleOrderLines($id)
     {
-        $saleOrder = SaleOrderHeader::with('lines')->find($id);
+        // product is eager-loaded for its `type`: sale_order_lines has no type
+        // column, and the printed invoice needs it to tell a service (delivery
+        // fee and the like) from stock. Without it every line defaulted to
+        // "product" and services printed as numbered goods rows, so the issued
+        // invoice did not match the preview.
+        $saleOrder = SaleOrderHeader::with('lines.product:id,type')->find($id);
 
         if (!$saleOrder) {
             return response()->json([], 404);
@@ -145,6 +150,9 @@ public function getSaleOrders(Request $request)
                 'id' => $line->id,
                 'item_code' => $line->item_code ?? '',
                 'name' => $line->name ?? '',
+                // Lets the printed invoice render a service as a merged row,
+                // exactly as the preview does.
+                'type' => $line->product->type ?? 'product',
                 'quantity' => $quantity,
                 'quantity_shiped' => $quantity_shiped,
                 'unit' => $line->unit ?? '',

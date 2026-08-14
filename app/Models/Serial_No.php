@@ -37,13 +37,11 @@ class Serial_No extends Model
      * type => [prefix, zero-padding width]
      *
      * Formatted as PREFIX + 2-digit year + '-' + padded counter, e.g. SO26-0001.
-     * Quotations stay 3 wide to match the numbers already issued.
      */
     public const TYPES = [
         'sale_order'    => ['SO',   4],
         'invoice'       => ['INV',  4],
         'delivery_note' => ['DN',   4],
-        'quotation'     => ['QUOT', 3],
         'purchase'      => ['GRN',  4],
         'transfer'      => ['TO',   4],
         'adjustment'    => ['ADJ',  4],

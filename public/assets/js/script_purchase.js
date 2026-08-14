@@ -65,6 +65,18 @@ window.addEventListener("success", (e) => {
     });
     closeGrnModal();
 
+    // post_grn forgets the vendor server-side, but #vendorSearch is a plain
+    // input that Livewire does not own — without this it keeps displaying the
+    // vendor that was just posted against, while the component holds nobody.
+    // Same two fields the Clear button's cart-cleared handler wipes, so the two
+    // paths leave the screen in the same state. The warehouse select needs no
+    // help: it is wire:model bound and post_grn already blanks it.
+    const vendorValue = document.getElementById("vendorValue");
+    const vendorSearch = document.getElementById("vendorSearch");
+    if (vendorValue) vendorValue.value = "";
+    if (vendorSearch) vendorSearch.value = "";
+    document.getElementById("vendorList")?.classList.add("hidden");
+
     // The receipt just changed stock, so the cards behind the modal are stale.
     // Reloading the active tab re-fetches them with the new quantities.
     if (typeof window.refreshPurchaseProducts === "function") {
@@ -993,25 +1005,269 @@ function confirmGrn() {
 window.addEventListener("open-purchase-preview", (event) => {
     const detail = event.detail?.[0] ?? event.detail ?? {};
     fillPurchasePreview(detail);
+    initPurchasePreviewVendorSearch();
 
     const modal = document.getElementById("purchasePreviewModal");
     modal.classList.remove("hidden");
     modal.classList.add("flex");
 });
 
+/**
+ * Vendor search inside the purchase preview — the same endpoint and behaviour
+ * as the vendor box on the purchase screen.
+ *
+ * Picking one here also selects it out there: #vendorValue is bound with
+ * wire:model.live, so setting it and firing 'input' is what actually updates
+ * PurchaseCart. Bound once; the modal markup is not re-rendered.
+ */
+function initPurchasePreviewVendorSearch() {
+    const input = document.getElementById("purchase-preview-vendor");
+    const list = document.getElementById("purchase-preview-vendor-list");
+    if (!input || !list || input.dataset.searchBound === "1") return;
+    input.dataset.searchBound = "1";
+
+    input.addEventListener("input", async () => {
+        const value = input.value.trim();
+        if (value.length === 0) {
+            list.classList.add("hidden");
+            list.innerHTML = "";
+            return;
+        }
+
+        try {
+            const res = await fetch("/vendor-search", {
+                method: "POST",
+                headers: {
+                    "X-CSRF-TOKEN": document.querySelector('input[name="_token"]')?.value,
+                    Accept: "application/json",
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ q: value }),
+            });
+            const data = await res.json();
+
+            list.innerHTML = "";
+            list.classList.remove("hidden");
+
+            if (!Array.isArray(data) || data.length === 0) {
+                list.innerHTML =
+                    '<li class="px-3 py-2 text-sm text-gray-500">No results found</li>';
+                return;
+            }
+
+            data.forEach((vendor) => {
+                const li = document.createElement("li");
+                li.textContent = `${vendor.code} - ${vendor.name}`;
+                li.className = "px-3 py-2 cursor-pointer hover:bg-gray-100 text-sm";
+                li.addEventListener("click", () => {
+                    applyPurchasePreviewVendor(vendor);
+                    list.classList.add("hidden");
+                });
+                list.appendChild(li);
+            });
+        } catch (err) {
+            console.error(err);
+        }
+    });
+
+    document.addEventListener("click", (e) => {
+        if (!input.contains(e.target) && !list.contains(e.target)) {
+            list.classList.add("hidden");
+        }
+    });
+}
+
+/**
+ * Post the GRN from the preview modal — the same call the old GRN modal made,
+ * reading the date shown here rather than from a second dialog.
+ *
+ * No extra prompt: the button is already "Confirm Purchase" and the user is
+ * looking at the lines they are confirming, so asking again is just a second
+ * click for the same decision.
+ */
+function confirmPurchaseFromPreview() {
+    const date = document.getElementById("purchase-preview-date")?.value;
+
+    if (!date) {
+        showToast({ message: "សូមជ្រើសរើស ថ្ងៃ ខែ​ ឆ្នាំ", type: "error" });
+        return;
+    }
+
+    // Two things are worth stopping for, for different reasons. A warehouse is
+    // required — post_grn refuses without one — so that blocks. A missing vendor
+    // is allowed but usually a slip, so that only asks. Everything else posts
+    // straight away.
+    const vendor = document.getElementById("purchase-preview-vendor")?.value.trim();
+    const warehouse = document.getElementById("purchaseWarehouseSelect")?.value;
+
+    if (!warehouse || !vendor) {
+        showPurchasePreflight({ warehouse: !warehouse, vendor: !vendor });
+        return;
+    }
+
+    postPurchaseFromPreview();
+}
+window.confirmPurchaseFromPreview = confirmPurchaseFromPreview;
+
+/**
+ * Show whichever checks failed. `missing.warehouse` is fatal, so Continue is
+ * withdrawn — there is nothing to continue to, and offering it would only post
+ * into a server-side rejection.
+ */
+function showPurchasePreflight(missing) {
+    const modal = document.getElementById("purchasePreflightModal");
+    if (!modal) return;
+
+    // The wording lives in the Blade so it stays translated; JS only picks which
+    // of the two rendered variants is visible.
+    const toggle = (id, on) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.classList.toggle("hidden", !on);
+        el.classList.toggle("flex", on);
+    };
+
+    toggle("preflight-warehouse", missing.warehouse);
+    toggle("preflight-vendor", missing.vendor);
+    toggle("preflight-continue", !missing.warehouse);
+
+    toggle("preflight-title-block", missing.warehouse);
+    toggle("preflight-hint-block", missing.warehouse);
+    toggle("preflight-title-warn", !missing.warehouse);
+    toggle("preflight-hint-warn", !missing.warehouse);
+
+    const icon = document.getElementById("preflight-icon");
+    icon?.classList.toggle("bg-rose-100", missing.warehouse);
+    icon?.classList.toggle("text-rose-600", missing.warehouse);
+    icon?.classList.toggle("bg-amber-100", !missing.warehouse);
+    icon?.classList.toggle("text-amber-600", !missing.warehouse);
+
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+}
+
+function closePurchasePreflight() {
+    const m = document.getElementById("purchasePreflightModal");
+    if (!m) return;
+    m.classList.add("hidden");
+    m.classList.remove("flex");
+}
+window.closePurchasePreflight = closePurchasePreflight;
+
+function proceedPurchaseAnyway() {
+    closePurchasePreflight();
+    postPurchaseFromPreview();
+}
+window.proceedPurchaseAnyway = proceedPurchaseAnyway;
+
+/** The actual post — shared by the direct path and the pre-flight confirmation. */
+function postPurchaseFromPreview() {
+    const date = document.getElementById("purchase-preview-date")?.value;
+
+    const component = Livewire.find(
+        document.querySelector("[wire\\:id]").getAttribute("wire:id"),
+    );
+
+    component.set("grn_date", date);
+    component.call("post_grn");
+
+    closePurchasePreviewModal();
+}
+
+/** Fill the preview fields and mirror the choice onto the purchase screen. */
+function applyPurchasePreviewVendor(vendor) {
+    document.getElementById("purchase-preview-vendor").value = vendor.name ?? "";
+    document.getElementById("purchase-preview-phone").value =
+        vendor.phone1 ?? vendor.phone ?? "";
+    document.getElementById("purchase-preview-address").value =
+        vendor.address1 ?? vendor.address ?? "";
+
+    const outsideSearch = document.getElementById("vendorSearch");
+    if (outsideSearch) outsideSearch.value = `${vendor.code} - ${vendor.name}`;
+
+    // wire:model.live watches 'input' — a dispatched Livewire event would not
+    // reach PurchaseCart, which has no matching listener.
+    const hidden = document.getElementById("vendorValue");
+    if (hidden && hidden.value !== String(vendor.id)) {
+        hidden.value = vendor.id;
+        hidden.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+}
+
+/**
+ * The cart being previewed, and the currency it is being READ in.
+ *
+ * Display only. The cart itself is always held in USD and the GRN always posts
+ * in USD — flipping this changes what is on screen and nothing else.
+ */
+let currentPurchasePreview = null;
+let purchasePreviewCurrency = { factor: 1, currency: "$" };
+
 function fillPurchasePreview(detail) {
+    currentPurchasePreview = detail;
+
     const vendor = detail.vendor ?? {};
-    const factor = Number(detail.factor) || 1;
-    const currency = detail.currency_name ?? "$";
-    const cart = detail.cart ?? [];
 
     document.getElementById("purchase-preview-vendor").value = vendor.name ?? "";
     document.getElementById("purchase-preview-phone").value = vendor.phone ?? "";
     document.getElementById("purchase-preview-address").value = vendor.address ?? "";
     document.getElementById("purchase-preview-date").value = detail.grn_date ?? todayLocal();
 
+    // Opens in whichever currency the purchase screen is set to, so the preview
+    // matches the screen it was opened from.
+    purchasePreviewCurrency = {
+        factor: Number(detail.factor) || 1,
+        currency: detail.currency_name ?? "$",
+    };
+
+    renderPurchasePreviewAmounts();
+}
+
+/**
+ * Flip the preview between dollars and riel.
+ *
+ * Only the amounts are redrawn — re-running fillPurchasePreview() here would
+ * overwrite the vendor and date the user may have just typed into the preview.
+ */
+function togglePurchasePreviewCurrency() {
+    const rielFactor = Number(currentPurchasePreview?.riel_factor) || 0;
+    if (rielFactor <= 1) return;
+
+    purchasePreviewCurrency =
+        purchasePreviewCurrency.factor === 1
+            ? { factor: rielFactor, currency: currentPurchasePreview.riel_code ?? "៛" }
+            : { factor: 1, currency: "$" };
+
+    renderPurchasePreviewAmounts();
+}
+window.togglePurchasePreviewCurrency = togglePurchasePreviewCurrency;
+
+function renderPurchasePreviewAmounts() {
+    const detail = currentPurchasePreview;
+    if (!detail) return;
+
+    const cart = detail.cart ?? [];
+    const factor = Number(purchasePreviewCurrency.factor) || 1;
+    const currency = purchasePreviewCurrency.currency ?? "$";
+    const rielFactor = Number(detail.riel_factor) || 0;
+
     document.getElementById("purchase-preview-rate-info").textContent =
         factor > 1 ? `Rate: ${factor.toLocaleString("en-US")}` : "";
+
+    // The button offers whichever currency is not on screen. With no riel rate
+    // configured there is no second currency, so it stays hidden.
+    const toggleBtn = document.getElementById("btn-toggle-purchase-preview-currency");
+    if (toggleBtn) {
+        toggleBtn.style.display = rielFactor > 1 ? "inline-flex" : "none";
+        const lbl = document.getElementById("purchase-preview-currency-label");
+        if (lbl) {
+            const viewIn = lbl.dataset.viewIn || "View in";
+            lbl.textContent =
+                factor === 1
+                    ? `${viewIn} ${detail.riel_code ?? "៛"}`
+                    : `${viewIn} $`;
+        }
+    }
 
     const money = (v) => `${formatMoneyPlain(Number(v || 0) * factor)} ${currency}`;
 
@@ -1028,9 +1284,9 @@ function fillPurchasePreview(detail) {
             <tr class="hover:bg-gray-50">
                 <td class="px-4 py-3">${index + 1}</td>
                 <td class="px-4 py-3 font-medium text-gray-800">${item.name ?? ""}</td>
-                <td class="px-4 py-3">${item.unit ?? ""}</td>
                 <td class="px-4 py-3">${item.lot ?? "-"}</td>
                 <td class="px-4 py-3 text-right">${formatQty(qty)}</td>
+                <td class="px-4 py-3">${item.unit ?? ""}</td>
                 <td class="px-4 py-3 text-right">${money(cost)}</td>
                 <td class="px-4 py-3 text-right font-bold text-blue-600">${money(lineTotal)}</td>
             </tr>
@@ -1072,7 +1328,19 @@ function printPurchasePreview() {
     );
 
     component.set("grn_date", date);
-    component.call("previewPurchase");
+
+    // Vendor fields are editable here — a preview is often run for a vendor not
+    // yet on file. Blank values fall back to the selected vendor server-side.
+    //
+    // The currency the modal is being read in goes with them, so the printed
+    // form comes out in whichever one the switch is showing.
+    component.call("previewPurchase", {
+        vendor_name: document.getElementById("purchase-preview-vendor")?.value || "",
+        vendor_phone: document.getElementById("purchase-preview-phone")?.value || "",
+        vendor_address: document.getElementById("purchase-preview-address")?.value || "",
+        view_factor: Number(purchasePreviewCurrency.factor) || 1,
+        view_currency: purchasePreviewCurrency.currency ?? "$",
+    });
 }
 
 window.addEventListener("close-grn-modal", () => {

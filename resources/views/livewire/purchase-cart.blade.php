@@ -634,7 +634,9 @@ foreach ($cart as $__it) {
                     <i class="fa-solid fa-warehouse absolute left-3 top-1/2 -translate-y-1/2 text-gray-500"></i>
 
                     <!-- Select -->
-                    <select wire:model.live="warehouse_id"
+                    {{-- id so the purchase pre-flight check can read it: posting
+                         a GRN without a warehouse is rejected server-side. --}}
+                    <select id="purchaseWarehouseSelect" wire:model.live="warehouse_id"
                         class="w-full border border-gray-300 rounded-xl pl-10 pr-4 py-2 shadow-sm
            focus:ring-2 focus:ring-green-300 focus:outline-none
            bg-white text-gray-700">
@@ -653,24 +655,24 @@ foreach ($cart as $__it) {
                         <i class="fa-solid fa-trash-can mr-1"></i> Clear
                     </button>
 
-                    <!-- Purchase -->
-                    @if (Auth::user()->hasPermission('purchasing.purchase'))
-                        <button onclick="openGrnModal()"
-                            class="bg-green-600 hover:bg-green-700 text-white font-medium px-1 py-2 rounded-xl shadow-md transition">
-                            <i class="fa-solid fa-cart-plus mr-1"></i> Purchase
-                        </button>
-                    @endif
+                    {{-- One button, one modal: it opens the preview, which shows
+                         the lines and totals and carries both Preview (prints,
+                         posts nothing) and Confirm Purchase (posts the GRN, gated
+                         on purchasing.purchase). The separate GRN date dialog is
+                         gone — the preview already has the date field.
 
-                    {{-- Preview needs NO permission: it prints the cart as it stands
-                         and posts nothing, so a user who may not receive stock can
-                         still put the figures in front of a vendor. Spans the row
-                         so it keeps its place whether or not Purchase is shown. --}}
-                    @if ($count_cart > 0)
-                        <button wire:click="openPurchasePreview"
-                            class="col-span-2 bg-slate-600 hover:bg-slate-700 text-white font-medium px-1 py-2 rounded-xl shadow-md transition">
-                            <i class="fa-solid fa-eye mr-1"></i> Preview
-                        </button>
-                    @endif
+                         Always rendered, sitting beside Clear, so the action does
+                         not appear and disappear as the cart fills. An empty cart
+                         is reported by openPurchasePreview() rather than by the
+                         button vanishing.
+
+                         No permission here: opening it writes nothing, and a user
+                         who may not receive stock can still show a vendor the
+                         figures. --}}
+                    <button wire:click="openPurchasePreview"
+                        class="bg-green-600 hover:bg-green-700 text-white font-medium px-1 py-2 rounded-xl shadow-md transition">
+                        <i class="fa-solid fa-cart-plus mr-1"></i> {{ __('Purchase') }}
+                    </button>
                 </div>
             </div>
         </div>

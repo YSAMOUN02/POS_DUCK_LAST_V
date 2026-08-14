@@ -2977,7 +2977,11 @@
                                         class="mt-1 w-full rounded-xl border-gray-300 px-4 py-2.5">
                                 </div>
 
-                                <div>
+                                {{-- VAT hidden, not removed: the input still posts
+                                     its value so the column keeps its default and
+                                     nothing downstream changes. Delete the `hidden`
+                                     to bring it back. --}}
+                                <div class="hidden">
                                     <label class="text-sm font-medium text-gray-700">VAT (%)</label>
                                     <input type="number" step="0.01" name="vat" value="0"
                                         class="mt-1 w-full rounded-xl border-gray-300 px-4 py-2.5">
@@ -3138,7 +3142,9 @@
                     <label>Unit Price</label>
                     <input id="prod-sell-price" type="number" step="0.01" class="w-full border rounded px-3 py-2" />
                 </div>
-                <div>
+                {{-- Hidden, not removed — the edit form still reads and writes
+                     prod-vat, so an existing product keeps whatever VAT it has. --}}
+                <div class="hidden">
                     <label>Vat</label>
                     <input id="prod-vat" type="number" step="0.01" class="w-full border rounded px-3 py-2" />
                 </div>
@@ -3336,13 +3342,22 @@
                                 <th class="sticky left-0 z-30 bg-slate-900 px-3 py-2">{{ __('No.') }}</th>
                                 <th class="px-3 py-2">{{ __('Invoice No.') }}</th>
                                 <th class="px-3 py-2">{{ __('Source Document No.') }}</th>
-                                <th class="px-3 py-2">{{ __('Posting Date') }}</th>
+                                {{-- Labelled Issue Date because that is what the cell
+                                     has always shown: created_at, with the time —
+                                     when the invoice was actually issued. It was
+                                     titled "Posting Date" while displaying something
+                                     else entirely. --}}
+                                <th class="px-3 py-2">{{ __('Issue Date') }}</th>
                                 <th class="px-3 py-2">{{ __('Customer Name') }}</th>
                                 <th class="px-3 py-2">{{ __('Phone No.') }}</th>
                                 <th class="px-3 py-2">{{ __('Address') }}</th>
                                 <th class="px-3 py-2">{{ __('Invoice Date') }}</th>
-                                <th class="px-3 py-2">{{ __('Payment Method') }}</th>
-                                <th class="px-3 py-2">{{ __('Customer Type') }}</th>
+                                {{-- Hidden, not deleted — same treatment as the VAT
+                                     columns, so they can be switched back on. The
+                                     copy menu reads hidden columns from the header,
+                                     so these drop out of a copied selection too. --}}
+                                <th class="px-3 py-2 hidden">{{ __('Payment Method') }}</th>
+                                <th class="px-3 py-2 hidden">{{ __('Customer Type') }}</th>
                                 <th class="px-3 py-2">{{ __('Item Name') }}</th>
                                 <th class="px-3 py-2">{{ __('Variant') }}</th>
                                 <th class="px-3 py-2">{{ __('Description') }}</th>
@@ -3353,8 +3368,8 @@
                                 <th class="px-3 py-2 text-right">{{ __('Subtotal') }}</th>
                                 <th class="px-3 py-2 text-right">{{ __('Discount (%)') }}</th>
                                 <th class="px-3 py-2 text-right">{{ __('Discount Amount') }}</th>
-                                <th class="px-3 py-2 text-right">{{ __('VAT (%)') }}</th>
-                                <th class="px-3 py-2 text-right">{{ __('VAT Amount') }}</th>
+                                <th class="px-3 py-2 text-right vat-col hidden">{{ __('VAT (%)') }}</th>
+                                <th class="px-3 py-2 text-right vat-col hidden">{{ __('VAT Amount') }}</th>
                                 <th class="px-3 py-2 text-right">{{ __('Net Amount') }}</th>
                                 <th class="px-3 py-2 text-right">{{ __('Grand Total') }}</th>
                             </tr>
@@ -4322,7 +4337,14 @@
                                         <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right">{{ __('Cost') }}</th>
                                         {{-- Inventory value of the movement (qty x cost), as opposed to the
                                              sales value in Line/Net/Total Amount further right. --}}
-                                        <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right">{{ __('Cost Amount') }}
+                                        {{-- Highlighted: this and Total Amount are the two figures read
+                                             most often, and they sit far apart in a very wide table. The
+                                             amber side rules run down the whole column so they can be
+                                             found without counting headers. Only the LEFT/RIGHT border
+                                             colour is set — border-amber-300 alone would also recolour
+                                             the sky bottom border shared by every header cell. --}}
+                                        <th class="border-b border-sky-100 border-l-2 border-r-2 border-l-amber-300 border-r-amber-300 bg-amber-100 px-2 py-1.5 font-bold text-right text-amber-900">
+                                            {{ __('Cost Amount') }}
                                         </th>
                                         <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right">{{ __('Unit Price') }}</th>
                                         <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right">{{ __('Selling Price') }}
@@ -4333,13 +4355,15 @@
                                         <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right">{{ __('Discount Amount') }}
                                         </th>
 
-                                        <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right">{{ __('VAT (%)') }}</th>
-                                        <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right">{{ __('VAT Amount') }}</th>
+                                        <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right vat-col hidden">{{ __('VAT (%)') }}</th>
+                                        <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right vat-col hidden">{{ __('VAT Amount') }}</th>
 
                                         <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right">{{ __('Line Amount') }}
                                         </th>
                                         <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right">{{ __('Net Amount') }}</th>
-                                        <th class="border-b border-sky-100 px-2 py-1.5 font-bold text-right">{{ __('Total Amount') }}
+                                        {{-- Highlighted alongside Cost Amount — see the note there. --}}
+                                        <th class="border-b border-sky-100 border-l-2 border-r-2 border-l-amber-300 border-r-amber-300 bg-amber-100 px-2 py-1.5 font-bold text-right text-amber-900">
+                                            {{ __('Total Amount') }}
                                         </th>
 
                                         <th class="border-b border-sky-100 px-2 py-1.5 font-bold">{{ __('Customer No.') }}</th>
@@ -4572,7 +4596,6 @@
                         <select id="sale_order_status"
                             class="min-w-[130px] rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
                             <option value="">Status</option>
-                            <option value="Quotation">Quotation</option>
                             <option value="Ordered">Ordered</option>
                             <option value="Deposit">Pending</option>
                             <option value="Completed">Completed</option>
@@ -4650,7 +4673,7 @@
                                     <th class="px-3 py-2 text-center">{{ __('Posting Date') }}</th>
                                     <th class="px-3 py-2 text-center">{{ __('Order Date') }}</th>
                                     <th class="px-3 py-2 text-right">{{ __('Total') }}</th>
-                                    <th class="px-3 py-2 text-right">{{ __('VAT') }}</th>
+                                    <th class="px-3 py-2 text-right vat-col hidden">{{ __('VAT') }}</th>
                                     <th class="px-3 py-2 text-right">{{ __('Discount') }}</th>
                                     <th class="px-3 py-2 text-right">{{ __('Grand Total') }}</th>
                                     <th class="px-3 py-2 text-right">{{ __('Paid') }}</th>
@@ -5077,12 +5100,6 @@
                     <div class="flex flex-wrap gap-2">
                         <div id="new_order" class="flex flex-wrap gap-2">
 
-                            <button type="button" onclick="Confirm_Save_Sale_Order('Quotation', this)"
-                                class="hidden inline-flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-blue-700 hover:shadow-lg transition active:scale-95">
-                                <i class="fa-solid fa-file-lines"></i>
-                                Quotation
-                            </button>
-
                             {{-- One-click flow: order + deduct stock + invoice, all at once —
                                  needs pos_sale.sell specifically (pos_sale.order alone isn't enough). --}}
                             <button type="button" onclick="Confirm_Save_Sale_Order('Deposit', this)"
@@ -5278,7 +5295,7 @@
                                     <th class="px-4 py-3 text-right font-semibold">{{ __('Price') }}</th>
                                     <th class="px-4 py-3 text-right font-semibold">{{ __('Sub Total') }}</th>
                                     <th class="px-4 py-3 text-right font-semibold">{{ __('Discount') }}</th>
-                                    <th class="px-4 py-3 text-right font-semibold">{{ __('VAT') }}</th>
+                                    <th class="px-4 py-3 text-right font-semibold vat-col hidden">{{ __('VAT') }}</th>
                                     <th class="px-4 py-3 text-right font-semibold">{{ __('Grand Total') }}</th>
                                 </tr>
                             </thead>
@@ -5372,27 +5389,61 @@
                 <div>
                     <h2 class="flex items-center gap-2 text-xl font-bold text-white">
                         <i class="fa-solid fa-file-lines"></i>
-                        <span id="quotation-modal-title">Save Quotation</span>
+                        {{-- Ids stay quotation-* : quotations were removed but this
+                             modal is now the shared Preview form, and renaming every
+                             id would touch a lot of JS for no behaviour change. --}}
+                        <span id="quotation-modal-title">{{ __('Preview') }}</span>
                     </h2>
-                    <p id="quotation-modal-subtitle" class="text-sm text-slate-300">Create or edit a quotation for a
-                        customer</p>
+                    <p id="quotation-modal-subtitle" class="text-sm text-slate-300">
+                        {{ __('Preview this cart — nothing is saved') }}</p>
                 </div>
 
-                <button type="button" onclick="closeQuotationModal()"
-                    class="modal-close-btn">
-                    &times;
-                </button>
+                <div class="flex items-center gap-3">
+                    {{-- View-only currency switch, the same one the purchase
+                         preview has. Unlike the Sale Order Detail modal, which
+                         converts at the rate stored on the posted document,
+                         nothing is saved here — so this uses today's riel rate.
+                         It only re-renders what is on screen: the cart, the
+                         totals and the sale itself are untouched. --}}
+                    {{-- Hidden by an inline style, not `hidden`: both that and
+                         `inline-flex` set display, and which wins depends on
+                         Tailwind's output order rather than on the attribute. --}}
+                    <button type="button" id="btn-toggle-sale-preview-currency"
+                        onclick="toggleSalePreviewCurrency()" style="display:none"
+                        class="inline-flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/20">
+                        <i class="fa-solid fa-money-bill-transfer"></i>
+                        {{-- The label is rebuilt in JS on every flip, so the
+                             translated prefix is carried here rather than being
+                             hardcoded in English there. --}}
+                        <span id="sale-preview-currency-label" data-view-in="{{ __('View in') }}">
+                            {{ __('View in') }} ៛
+                        </span>
+                    </button>
+
+                    <button type="button" onclick="closeQuotationModal()"
+                        class="modal-close-btn">
+                        &times;
+                    </button>
+                </div>
             </div>
 
             {{-- Body --}}
             <div class="max-h-[80vh] space-y-4 overflow-y-auto bg-slate-50 p-4">
 
                 {{-- Customer Info --}}
-                <div class="overflow-hidden rounded-2xl border bg-white shadow-sm">
+                {{-- overflow-visible, not overflow-hidden: the search suggestions
+                     are absolutely positioned inside this card, and a clipping
+                     ancestor cuts them off no matter how high their z-index is.
+
+                     relative z-30 lifts the whole card above the Cart Items card
+                     below it. Without it the dropdown's own z-50 counts only
+                     inside this card, so the later sibling — painted after it in
+                     DOM order — drew its table header over the suggestions. --}}
+                <div class="relative z-30 overflow-visible rounded-2xl border bg-white shadow-sm">
                     <div class="flex items-center justify-between gap-2 border-b bg-white px-4 py-3">
                         <div class="flex items-center gap-2">
                             <i class="fa-solid fa-user text-gray-400"></i>
-                            <h3 class="font-bold text-gray-800">Customer Info</h3>
+                            <h3 class="font-bold text-gray-800">{{ __("Customer Info") }}</h3>
                         </div>
                         @if (Auth::user()->hasPermission('customer.create'))
                             <button type="button" onclick="openCustomerCreateFor('quotation')"
@@ -5408,7 +5459,7 @@
                         <input type="hidden" id="quotation-customer-id" value="">
 
                         <div class="relative">
-                            <label class="text-xs text-gray-500">Search Customer</label>
+                            <label class="text-xs text-gray-500">{{ __("Search Customer") }}</label>
                             <i
                                 class="fa-solid fa-magnifying-glass absolute left-3 top-[30px] text-gray-400 text-xs"></i>
                             <input type="text" id="quotation-customer-search" autocomplete="off"
@@ -5422,25 +5473,27 @@
 
                         <div class="grid grid-cols-2 gap-2 lg:grid-cols-4">
                             <div>
-                                <label class="text-xs text-gray-500">Customer Name</label>
+                                <label class="text-xs text-gray-500">{{ __("Customer Name") }}</label>
                                 <input type="text" id="quotation-customer-name" placeholder="Walk-in Customer"
                                     class="mt-0.5 w-full rounded-xl border-gray-300 px-3.5 py-1.5 text-sm shadow-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-100 outline-none transition">
                             </div>
 
                             <div>
-                                <label class="text-xs text-gray-500">Phone</label>
+                                <label class="text-xs text-gray-500">{{ __("Phone") }}</label>
                                 <input type="text" id="quotation-customer-phone" placeholder="Phone number"
                                     class="mt-0.5 w-full rounded-xl border-gray-300 px-3.5 py-1.5 text-sm shadow-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-100 outline-none transition">
                             </div>
 
                             <div>
-                                <label class="text-xs text-gray-500">Address</label>
+                                <label class="text-xs text-gray-500">{{ __("Address") }}</label>
                                 <input type="text" id="quotation-customer-address" placeholder="Address"
                                     class="mt-0.5 w-full rounded-xl border-gray-300 px-3.5 py-1.5 text-sm shadow-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-100 outline-none transition">
                             </div>
                             <div>
-                                <label class="text-xs text-gray-500">Remarks</label>
-                                <input type="text" id="quotation-remark" placeholder="Remarks (optional)"
+                                {{-- Field id stays quotation-remark: it maps to the
+                                     document's remark, this only relabels it. --}}
+                                <label class="text-xs text-gray-500">{{ __('Taxi Phone') }}</label>
+                                <input type="text" id="quotation-remark" placeholder="{{ __('Taxi Phone') }}"
                                     class="mt-0.5 w-full rounded-xl border-gray-300 px-3.5 py-1.5 text-sm shadow-sm focus:border-sky-400 focus:ring-2 focus:ring-sky-100 outline-none transition">
                             </div>
                         </div>
@@ -5452,7 +5505,7 @@
                     <div class="flex items-center justify-between border-b bg-white px-4 py-3">
                         <h3 class="flex items-center gap-2 font-bold text-gray-800">
                             <i class="fa-solid fa-boxes-stacked text-gray-400"></i>
-                            Cart Items
+                            {{ __("Cart Items") }}
                         </h3>
                         <span id="preview-rate-info" class="text-sm text-gray-500"></span>
                     </div>
@@ -5462,12 +5515,12 @@
                             <thead class="bg-gray-100 text-gray-600">
                                 <tr>
                                     <th class="px-4 py-3 text-left">#</th>
-                                    <th class="px-4 py-3 text-left">{{ __('Code') }}</th>
                                     <th class="px-4 py-3 text-left">{{ __('Item') }}</th>
                                     <th class="px-4 py-3 text-right">{{ __('Qty') }}</th>
+                                    <th class="px-4 py-3 text-left">{{ __('Unit') }}</th>
                                     <th class="px-4 py-3 text-right">{{ __('Price') }}</th>
                                     <th class="px-4 py-3 text-right">{{ __('Discount') }}</th>
-                                    <th class="px-4 py-3 text-right">{{ __('VAT') }}</th>
+                                    <th class="px-4 py-3 text-right vat-col hidden">{{ __('VAT') }}</th>
                                     <th class="px-4 py-3 text-right">{{ __('Grand Total') }}</th>
                                 </tr>
                             </thead>
@@ -5519,20 +5572,6 @@
                         <span>{{ __('Preview') }}</span>
                     </button>
 
-                    {{-- Saving is gated on quotation.create. Rendered disabled rather
-                         than hidden so it is obvious the action exists but is not
-                         yours — the server re-checks in saveQuotation regardless. --}}
-                    @php($canSaveQuotation = Auth::user()->hasPermission('quotation.create') || Auth::user()->hasPermission('quotation.edit'))
-                    <button id="btn-save-quotation" onclick="submitQuotation()"
-                        @disabled(!$canSaveQuotation)
-                        title="{{ $canSaveQuotation ? '' : __('You do not have permission to save quotations') }}"
-                        class="px-4 py-2 font-medium rounded-xl shadow-md transition flex items-center gap-2
-                            {{ $canSaveQuotation
-                                ? 'bg-teal-600 hover:bg-teal-700 text-white'
-                                : 'bg-gray-300 text-gray-500 cursor-not-allowed' }}">
-                        <i class="fa-solid fa-floppy-disk"></i>
-                        <span id="quotation-save-label">{{ __('Save Quotation') }}</span>
-                    </button>
                 </div>
 
                 <button type="button" onclick="closeQuotationModal()"
@@ -5544,107 +5583,6 @@
     </div>
 
     {{-- <LIST Quotation DATA> --}}
-    <div id="quotationListModal" tabindex="-1" aria-hidden="true"
-        class="modal-overlay-sale !p-1 hidden">
-
-        <div class="relative w-full max-w-[98vw] mx-auto h-[98vh] flex items-center justify-center">
-            <div class="modal-card-sale h-full">
-
-            {{-- Header --}}
-            <div class="modal-header-sale !py-2">
-                <h3 class="text-sm font-bold text-white flex items-center gap-2 whitespace-nowrap">
-                    <i class="fa-solid fa-file-lines"></i>
-                    Quotations
-                    <span class="font-normal text-slate-300">· Browse, load, or cancel saved quotations</span>
-                </h3>
-
-                <button type="button" onclick="closeQuotationListModal()"
-                    class="modal-close-btn shrink-0">
-                    &times;
-                </button>
-            </div>
-
-            {{-- Filters --}}
-            <div class="bg-slate-50 border-b border-slate-200 px-3 py-2 shrink-0">
-                <div class="flex flex-wrap items-center gap-2">
-
-                    <input id="quotation_document_search" placeholder="Quotation No"
-                        class="min-w-[140px] border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm
-                           focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none transition">
-
-                    <input id="quotation_search" placeholder="Customer / Phone"
-                        class="min-w-[160px] border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm
-                           focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none transition">
-
-                    <select id="quotation_status"
-                        class="min-w-[130px] border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm
-                           focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none transition">
-                        <option value="">All Status</option>
-                        <option value="Quotation">Open</option>
-                        <option value="Completed">Completed</option>
-                        <option value="Cancelled">Cancelled</option>
-                    </select>
-
-                    <input type="date" id="quotation_from_date"
-                        class="border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm
-                           focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none transition">
-
-                    <span class="text-slate-400 text-sm">to</span>
-
-                    <input type="date" id="quotation_to_date"
-                        class="border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm
-                           focus:border-teal-400 focus:ring-2 focus:ring-teal-100 outline-none transition">
-
-                    <button onclick="loadQuotations(1)"
-                        class="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-3 py-1.5 text-sm font-semibold shadow-md transition">
-                        <i class="fa-solid fa-magnifying-glass"></i> Search
-                    </button>
-
-                    <button onclick="clearQuotationFilters()"
-                        class="inline-flex items-center gap-2 border border-slate-300 bg-white hover:bg-slate-100 text-slate-600 px-3 py-1.5 text-sm font-semibold transition">
-                        <i class="fa-solid fa-rotate-left"></i> Clear
-                    </button>
-
-                </div>
-            </div>
-
-            {{-- Table --}}
-            <div class="flex-1 overflow-y-auto min-h-0 bg-slate-50 p-6">
-                <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                    <div class="overflow-x-auto">
-                        <table id="Table-quotation" class="w-full text-sm">
-                            <thead class="bg-slate-100 text-slate-600 sticky top-0 z-10">
-                                <tr>
-                                    <th class="px-4 py-3 text-left font-semibold">#</th>
-                                    <th class="px-4 py-3 text-left font-semibold">{{ __('Quotation No') }}</th>
-                                    <th class="px-4 py-3 text-center font-semibold">{{ __('Date') }}</th>
-                                    <th class="px-4 py-3 text-left font-semibold">{{ __('Customer') }}</th>
-                                    <th class="px-4 py-3 text-left font-semibold">{{ __('Phone') }}</th>
-                                    <th class="px-4 py-3 text-right font-semibold">{{ __('Grand Total') }}</th>
-                                    <th class="px-4 py-3 text-center font-semibold">{{ __('Status') }}</th>
-                                    <th class="px-4 py-3 text-center font-semibold">{{ __('Actions') }}</th>
-                                </tr>
-                            </thead>
-
-                            <tbody id="Table-quotation-list" class="divide-y divide-slate-100"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            {{-- Footer --}}
-            <div class="flex justify-between items-center gap-3 border-t border-slate-200 bg-white px-6 py-4 shrink-0">
-                <div id="quotation-pagination" class="text-sm text-slate-500"></div>
-
-                <button type="button" onclick="closeQuotationListModal()"
-                    class="rounded-xl border border-slate-300 px-5 py-2 text-slate-600 font-medium transition hover:bg-slate-100">
-                    Close
-                </button>
-            </div>
-        </div>
-        </div>
-    </div>
-
     <div id="expenseModal"
         class="modal-overlay-alert hidden">
         <div class="modal-card-alert">
@@ -5765,5 +5703,38 @@
                 </button>
             </div>
         </div>
+    </div>
+
+    {{-- Right-click menu for the selectable tables (item ledger, sale list,
+         expense list). Rendered here rather than built in JS so every label
+         still goes through __() and stays translated.
+
+         Copies as tab-separated text, which is what Excel and Sheets expect
+         from the clipboard — one column per cell, no import step. --}}
+    <div id="tableCopyMenu"
+        class="fixed z-[200] hidden min-w-[190px] overflow-hidden rounded-xl border border-gray-200 bg-white py-1 shadow-2xl">
+        <button type="button" onclick="copySelectedRows(false)"
+            class="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100">
+            <i class="fa-regular fa-copy w-4 text-gray-400"></i>
+            <span>{{ __('Copy') }}</span>
+            <span class="ml-auto text-xs text-gray-400">Ctrl+C</span>
+        </button>
+        <button type="button" onclick="copySelectedRows(true)"
+            class="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100">
+            <i class="fa-solid fa-table-list w-4 text-gray-400"></i>
+            <span>{{ __('Copy with header') }}</span>
+        </button>
+        <div class="my-1 border-t border-gray-100"></div>
+        <button type="button" onclick="selectAllCopyRows()"
+            class="flex w-full items-center gap-3 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100">
+            <i class="fa-solid fa-list-check w-4 text-gray-400"></i>
+            <span>{{ __('Select all rows') }}</span>
+            <span class="ml-auto text-xs text-gray-400">Ctrl+A</span>
+        </button>
+
+        {{-- Toast wording, carried here for the same reason as the labels. --}}
+        <span id="tableCopyMsgOne" class="hidden">{{ __('Copied :n row') }}</span>
+        <span id="tableCopyMsgMany" class="hidden">{{ __('Copied :n rows') }}</span>
+        <span id="tableCopyMsgFail" class="hidden">{{ __('Could not copy to clipboard') }}</span>
     </div>
 @endpush

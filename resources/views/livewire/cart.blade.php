@@ -937,13 +937,6 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                                 class="bg-indigo-500 hover:bg-indigo-600 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
                                 <i class="fa-solid fa-cart-shopping"></i> View
                             </button>
-                            <!-- Quotations -->
-                            @if (Auth::user()->hasPermission('quotation.view'))
-                                <button onclick="openQuotationListModal()"
-                                    class="bg-teal-500 hover:bg-teal-600 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
-                                    <i class="fa-solid fa-file-lines"></i> Quotes
-                                </button>
-                            @endif
                             @if (Auth::user()->hasPermission('pos_sale.sell'))
                                 @if ($this->document_no != 'NA')
                                     <!-- Update Sale Order -->
@@ -965,17 +958,8 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                                     <i class="fa-solid fa-circle-info"></i> Info
                                 </button>
                             @endif
-                            @if ($this->count_cart > 0 && Auth::user()->hasPermission('quotation.create'))
-                                <button wire:click="openQuotationPreview"
-                                    class="bg-gray-500 hover:bg-gray-600 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
-                                    <i class="fa-solid fa-file-lines"></i> Quote
-                                </button>
-                            @endif
                             {{-- Preview needs NO permission: it prints this cart as it
-                                 stands, writes nothing and issues no number. The Quote
-                                 button above needs quotation.create, so without this a
-                                 user who may not raise a quotation could not even show
-                                 a customer the figures. --}}
+                                 stands, writes nothing and issues no number. --}}
                             @if ($this->count_cart > 0)
                                 <button wire:click="openDocumentPreview"
                                     class="bg-slate-600 hover:bg-slate-700 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
