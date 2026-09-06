@@ -1,5 +1,6 @@
-<div>
-    <div class="screen-only">
+<div class="h-full flex flex-col min-h-0">
+    <div class="screen-only h-full flex flex-col min-h-0">
+        <div class="flex-1 min-h-0 overflow-y-auto">
         <div id="header_invoice"
             class="border-b bg-white border-default pb-2 p-2 flex items-center justify-between sticky top-0">
 
@@ -34,40 +35,35 @@
         @php
             // =========================================================
             // CURRENCY DISPLAY RULES
-            //  - $step  : rounding step applied to PER-UNIT prices only
-            //             (KHR → 100, so every unit price ends in 00)
             //  - $decimal : decimals for the FINAL formatted amount
             //
-            // KEY RULE (WYSIWYG):
-            //   round the UNIT price first, THEN multiply by qty.
-            //   => displayed unit × qty == displayed line, exactly.
-            //   Totals sum these same per-line values, so everything
-            //   reconciles on screen and on the printed invoice.
+            // KEY RULE:
+            //   unit prices and line amounts are the converted value, truncated
+            //   to whole riel (250.51 shows 250, never 251). Only the payable
+            //   grand total snaps to 100៛, because riel has no smaller coin.
             // =========================================================
             $factor = (float) ($this->factor ?: 1);
+            $truncate = $factor >= 4000; // riel is never quoted in fractions of a riel
 
             if ($factor == 1) {
                 $decimal = 2;
-                $step = 0;
                 $thousands = ''; // USD
             } elseif ($factor >= 4000) {
                 $decimal = 0;
-                $step = 100;
-                $thousands = ','; // KHR → unit ends in 00
+                $thousands = ','; // KHR
             } elseif ($factor >= 100) {
                 $decimal = 3;
-                $step = 0;
                 $thousands = ''; // mid-rate
             } else {
                 $decimal = 2;
-                $step = 0;
                 $thousands = ''; // fallback
             }
 
-            // round a BASE (USD) per-unit value into stepped display currency
-            $unitDisp = function ($baseUnit) use ($factor, $step, $decimal) {
+            // a BASE (USD) per-unit value in display currency — never stepped
+            $unitDisp = function ($baseUnit) use ($factor, $decimal, $truncate) {
                 $v = (float) $baseUnit * $factor;
-                return $step > 0 ? round($v / $step) * $step : round($v, $decimal);
+                // round() first so float dust (250.9999999) truncates as 251, not 250
+                return $truncate ? floor(round($v, 6)) : round($v, $decimal);
             };
 
             // format a FINAL display-currency amount (lines / totals) — no step rounding
@@ -82,7 +78,7 @@
                 // trim trailing decimals only (won't touch the thousands separator)
     return strpos($s, '.') !== false ? rtrim(rtrim($s, '0'), '.') : $s;
 };
-// PER-UNIT price display (stepped) e.g. 72200
+// PER-UNIT price display e.g. 72150
 $priceFmt = function ($baseUnit) use ($unitDisp, $money) {
     return $money($unitDisp($baseUnit));
 };
@@ -91,7 +87,7 @@ $priceInput = function ($baseUnit) use ($unitDisp, $money_no_format) {
     return $money_no_format($unitDisp($baseUnit));
 };
 
-// WYSIWYG line: stepped unit × qty  e.g. 72200 × 3 = 216600
+// line: unit × qty  e.g. 72150 × 3 = 216450
 $fmtLine = function ($baseUnit, $qty) use ($unitDisp, $money) {
     return $money($unitDisp($baseUnit) * (float) $qty);
 };
@@ -250,6 +246,35 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                     font-weight: 500;
                     white-space: nowrap;
                 }
+
+                /* Header qty stepper — adjust a line without opening the row. */
+                /* Qty stepper: sits under the line total in the right column. */
+                .ci-qty-step {
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 6px;
+                    margin-top: 6px;
+                }
+
+                .ci-step {
+                    width: 24px;
+                    height: 22px;
+                    line-height: 1;
+                    border: 1px solid var(--ci-border);
+                    border-radius: 6px;
+                    background: #fff;
+                    color: var(--ci-ink);
+                    font-size: 14px;
+                    font-weight: 700;
+                    cursor: pointer;
+                    padding: 0;
+                }
+
+                .ci-step:hover { background: oklch(0.96 0.01 95); }
+                .ci-step:active { transform: scale(0.92); }
+
+
+
 
                 .ci-badge {
                     display: inline-flex;
@@ -530,7 +555,7 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                     }
 
                     /* action buttons: 2 per row instead of 4 crushed */
-                    #total .mt-5.grid.grid-cols-4 {
+                    .cart-actions {
                         grid-template-columns: repeat(2, 1fr);
                         gap: 6px;
                     }
@@ -549,33 +574,91 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                     }
                 }
 
+                /* Placeholder row shown between the tap on a product and the
+                   add-product round-trip returning. Same box as .ci-card so the
+                   list does not jump when the real row replaces it. */
+                .ci-skeleton {
+                    background: #fff;
+                    border: 1px solid var(--ci-border);
+                    box-shadow: 0 1px 2px oklch(0.7 0.02 95 / 0.18);
+                    padding: 12px 14px;
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 10px;
+                    animation: ci-row-in 0.25s ease both;
+                }
+
+                .ci-skeleton .sk {
+                    background: linear-gradient(90deg,
+                            oklch(0.93 0.006 95) 25%,
+                            oklch(0.97 0.004 95) 37%,
+                            oklch(0.93 0.006 95) 63%);
+                    background-size: 400% 100%;
+                    animation: ci-sk-shimmer 1.2s ease-in-out infinite;
+                    border-radius: 4px;
+                    height: 11px;
+                }
+
+                @keyframes ci-sk-shimmer {
+                    from { background-position: 100% 50%; }
+                    to   { background-position: 0 50%; }
+                }
+
+                @media (prefers-reduced-motion: reduce) {
+                    .ci-skeleton .sk { animation: none; }
+                }
+
+                /* Actions ride the bottom of the cart column so Clear / Order /
+                   Preview stay reachable without scrolling past a long list.
+                   The scroll container is the cart's own wrapper in pos.blade. */
+                /* A flex footer, not sticky: the bar is the last thing in the
+                   column, so bottom:0 had no travel and never lifted off the
+                   page. Sitting outside the scroll region keeps it in view. */
+                .cart-actions {
+                    flex-shrink: 0;
+                    background: #fff;
+                    padding: 10px 8px 8px;
+                    border-top: 1px solid var(--ci-border);
+                }
+
             </style>
 
             @php
                 $locked = in_array($this->document_type, ['Deposit', 'Completed', 'Cancelled', 'Returned']);
             @endphp
 
-            <div class="flex flex-col gap-1">
+            <div id="cartLines" class="flex flex-col gap-1">
 
                 @forelse ($cart as $item)
                     <div class="w-full mx-auto animate-add">
                         {{-- data-* drive the right-click quantity stepper (qty_stepper.js):
                              it needs the row index to adjust, and the name/qty to show. --}}
                         <div class="ci-card" data-cart-index="{{ $loop->index }}"
+                            data-cart-id="{{ $item['id'] }}" data-cart-stock="{{ $item['stock'] ?? '' }}"
                             data-cart-name="{{ $item['name'] ?? '' }}" data-cart-qty="{{ $item['qty'] ?? 0 }}"
                             data-cart-locked="{{ $locked ? '1' : '0' }}">
 
                             {{-- ===== Header (clickable) ===== --}}
+                            {{-- Expand/collapse is browser-only: nothing but this panel
+                                 ever read $openIndex, so a Livewire round-trip per tap
+                                 bought nothing. The open row is re-applied after each
+                                 morph, keyed on the item id. --}}
                             <div class="ci-header {{ $locked ? 'ci-locked' : '' }}"
-                                @unless ($locked) wire:click="toggleItem({{ $loop->index }})" @endunless>
+                                @unless ($locked) onclick="toggleCartRowInstant(this)" @endunless>
 
                                 <div class="ci-left">
                                     <div class="ci-controls">
                                         @unless ($locked)
                                             <span
-                                                class="ci-chevron {{ $openIndex === $loop->index ? 'ci-open' : '' }}">▾</span>
-                                            <button class="ci-remove" title="Remove item"
-                                                wire:click.stop="removeItem({{ $item['id'] }})">
+                                                class="ci-chevron">▾</span>
+                                            {{-- Double-click, not single: a stray tap beside the qty
+                                                 field used to drop the line outright. The onclick only
+                                                 swallows the bubble, so one click neither removes the
+                                                 line nor toggles the row open. --}}
+                                            <button class="ci-remove" title="Double-click to remove"
+                                                onclick="event.stopPropagation()"
+                                                wire:dblclick.stop="removeItem({{ $item['id'] }})">
                                                 <i class="fa-solid fa-delete-left fa-flip-horizontal"></i>
                                             </button>
                                         @endunless
@@ -588,10 +671,9 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                                                 {{ $item['name'] }}
                                             </span>
 
-                                            @if ($cart_mode != 'expence')
-                                                <span class="ci-qty"> × {{ $qtyFmt($item['qty']) }}
-                                                    {{ $item['unit'] }}</span>
-                                            @endif
+                                            {{-- qty lives in the right column, not here: a long
+                                                 name wraps and would push it to a ragged position
+                                                 mid-sentence instead of lining up with the total. --}}
                                         </p>
 
                                         @if ($this->document_type == 'Deposit')
@@ -624,6 +706,12 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
 
                                 {{-- amount + currency on ONE line --}}
                                 <div class="ci-total">
+                                    @if ($cart_mode != 'expence')
+                                        <div class="ci-qty">× <span
+                                                class="ci-qty-val">{{ $qtyFmt($item['qty']) }}</span>
+                                            {{ $item['unit'] }}</div>
+                                    @endif
+
                                     @if ($item['discount_percent'] != 0)
                                         <del class="number-change">{{ $fmtLine($item['price'], $item['qty']) }}
                                             {{ $this->currency_name }}</del>
@@ -635,11 +723,21 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                                             class="ci-total-amount number-change">{{ $fmtLine($item['price'], $item['qty']) }}</span><span
                                             class="ci-total-currency">{{ $this->currency_name }}</span>
                                     @endif
+
+                                    @unless ($locked || $cart_mode == 'expence')
+                                        {{-- stopPropagation so stepping does not also toggle the row --}}
+                                        <div class="ci-qty-step" onclick="event.stopPropagation()">
+                                            <button type="button" class="ci-step"
+                                                onclick="stepCartQty(this, -1)" aria-label="Decrease">-</button>
+                                            <button type="button" class="ci-step"
+                                                onclick="stepCartQty(this, 1)" aria-label="Increase">+</button>
+                                        </div>
+                                    @endunless
                                 </div>
                             </div>
 
                             {{-- ===== Dropdown editor ===== --}}
-                            <div class="ci-panel bonus {{ $openIndex === $loop->index ? 'ci-open' : '' }}">
+                            <div class="ci-panel bonus">
                                 <div class="ci-panel-inner">
 
                                     @if ($item['type'] == 'product' || $item['type'] == 'service')
@@ -722,7 +820,10 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
 
                 @empty
 
-                    <div class="flex flex-col items-center justify-center py-6 px-6 text-center">
+                    {{-- data-cart-empty: hidden while the add placeholder shows, so
+                         the first item does not sit under "No items in cart". --}}
+                    <div data-cart-empty
+                        class="flex flex-col items-center justify-center py-6 px-6 text-center">
 
                         <img src="{{ asset('assets/defult/cart.png') }}" alt="Empty Cart"
                             class="w-24 h-24 lg:w-28 lg:h-28 object-contain opacity-80">
@@ -885,7 +986,7 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                             <div class="relative">
                                 <i
                                     class="fa-solid fa-warehouse absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                                <select wire:model.live="sale_warehouse_id"
+                                <select id="saleWarehouseSelect" wire:model.live="sale_warehouse_id"
                                     @disabled($this->saleWarehouseLocked)
                                     class="w-full border border-gray-300 rounded-xl
                                            pl-10 pr-8 py-2 h-[42px] appearance-none
@@ -913,64 +1014,6 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                         </div>
                     @endif
 
-                    <hr>
-                    <div class="mt-5 grid grid-cols-4 gap-2">
-
-
-
-
-                        <!-- Clear -->
-                        <button wire:click="clearCart"
-                            class="bg-red-500 hover:bg-red-600 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
-                            <i class="fa-solid fa-trash-can mr-1"></i> Clear
-                        </button>
-
-                        @if ($cart_mode == 'expence')
-                            <!-- Expense -->
-                            <button onclick="openExpenseModal()"
-                                class="bg-orange-500 hover:bg-orange-600 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
-                                <i class="fa-solid fa-wallet mr-1"></i> Pay Expense
-                            </button>
-                        @else
-                            <!-- Saved Order -->
-                            <button onclick="openSaleOrderModal()"
-                                class="bg-indigo-500 hover:bg-indigo-600 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
-                                <i class="fa-solid fa-cart-shopping"></i> View
-                            </button>
-                            @if (Auth::user()->hasPermission('pos_sale.sell'))
-                                @if ($this->document_no != 'NA')
-                                    <!-- Update Sale Order -->
-                                    <button onclick="update_sale_order()"
-                                        class="bg-blue-500 hover:bg-blue-600 text-white font-small px-2 py-2 rounded-xl shadow-md transition">
-                                        <i class="fa-solid fa-floppy-disk mr-1"></i> Update
-                                    </button>
-                                @else
-                                    <!-- Save Order -->
-                                    <button onclick="Save_Sale_Order()"
-                                        class="bg-blue-500 hover:bg-blue-600 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
-                                        <i class="fa-solid fa-hand-holding-dollar"></i> Order
-                                    </button>
-                                @endif
-                            @endif
-                            @if ($this->document_id != 0)
-                                <button onclick="openSaleLine()"
-                                    class="bg-gray-500 hover:bg-gray-600 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
-                                    <i class="fa-solid fa-circle-info"></i> Info
-                                </button>
-                            @endif
-                            {{-- Preview needs NO permission: it prints this cart as it
-                                 stands, writes nothing and issues no number. --}}
-                            @if ($this->count_cart > 0)
-                                <button wire:click="openDocumentPreview"
-                                    class="bg-slate-600 hover:bg-slate-700 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
-                                    <i class="fa-solid fa-eye"></i> Preview
-                                </button>
-                            @endif
-
-                        @endif
-
-
-                    </div>
                 </div>
             </div>
 
@@ -1172,6 +1215,68 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
 
 
             </div>
+
+        </div>
+        </div>
+
+        {{-- Action bar: a flex footer, NOT sticky. It is the last
+             thing in the column, so bottom:0 had no travel and never
+             lifted. Outside the scroll region it is always visible. --}}
+        <div class="grid grid-cols-4 gap-2 cart-actions">
+
+
+
+
+            <!-- Clear — double-click, same guard as removing a single line -->
+            <button wire:dblclick="clearCart" title="Double-click to clear the cart"
+                class="bg-red-500 hover:bg-red-600 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
+                <i class="fa-solid fa-trash-can mr-1"></i> Clear
+            </button>
+
+            @if ($cart_mode == 'expence')
+                <!-- Expense -->
+                <button onclick="openExpenseModal()"
+                    class="bg-orange-500 hover:bg-orange-600 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
+                    <i class="fa-solid fa-wallet mr-1"></i> Pay Expense
+                </button>
+            @else
+                <!-- Saved Order -->
+                <button onclick="openSaleOrderModal()"
+                    class="bg-indigo-500 hover:bg-indigo-600 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
+                    <i class="fa-solid fa-cart-shopping"></i> View
+                </button>
+                @if (Auth::user()->hasPermission('pos_sale.sell'))
+                    @if ($this->document_no != 'NA')
+                        <!-- Update Sale Order -->
+                        <button onclick="update_sale_order()"
+                            class="bg-blue-500 hover:bg-blue-600 text-white font-small px-2 py-2 rounded-xl shadow-md transition">
+                            <i class="fa-solid fa-floppy-disk mr-1"></i> Update
+                        </button>
+                    @else
+                        <!-- Save Order -->
+                        <button onclick="Save_Sale_Order()"
+                            class="bg-blue-500 hover:bg-blue-600 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
+                            <i class="fa-solid fa-hand-holding-dollar"></i> Order
+                        </button>
+                    @endif
+                @endif
+                @if ($this->document_id != 0)
+                    <button onclick="openSaleLine()"
+                        class="bg-gray-500 hover:bg-gray-600 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
+                        <i class="fa-solid fa-circle-info"></i> Info
+                    </button>
+                @endif
+                {{-- Preview needs NO permission: it prints this cart as it
+                     stands, writes nothing and issues no number. --}}
+                @if ($this->count_cart > 0)
+                    <button wire:click="openDocumentPreview"
+                        class="bg-slate-600 hover:bg-slate-700 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
+                        <i class="fa-solid fa-eye"></i> Preview
+                    </button>
+                @endif
+
+            @endif
+
 
         </div>
 

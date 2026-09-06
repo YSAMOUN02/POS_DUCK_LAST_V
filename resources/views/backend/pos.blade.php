@@ -106,7 +106,9 @@
 
         <div id="sidebar" class="flex flex-col max-h-full shrink-0 w-full lg:w-[380px]">
             <div id="inner-sidebar" class="sticky top-0 bg-slate-100 border-l border-default h-full">
-                <div class="overflow-y-auto bg-white w-full h-full">
+                {{-- overflow-hidden, not auto: the cart scrolls its own inner
+                     region so the action bar can sit below it as a footer. --}}
+                <div class="overflow-hidden bg-white w-full h-full flex flex-col">
                     @livewire('cart')
                 </div>
             </div>
@@ -421,7 +423,10 @@
                     ? renderProductListTable(products)
                     : renderProductGrid(products);
 
-                initAddToCartButtons();
+                {{-- No per-button binding: the delegated click handler on
+                     #tab-content already covers every card, before and after a
+                     re-render. Binding again on top of it fired twice per tap —
+                     two skeletons, and two add-product dispatches. --}}
 
             } catch (err) {
                 if (!silent) {
@@ -692,7 +697,7 @@
 
             const productJson = btn.dataset.product;
 
-            Livewire.dispatch('add-product', productJson); // ONLY this
+            addProductToCart(productJson); // ONLY this
         });
 
         const searchInput_product = document.getElementById('search-dropdown');
@@ -783,7 +788,7 @@
                 // field could get silently re-added to the cart on the next
                 // poll tick.
                 if (!silent && field === 'bar_code' && products.length === 1) {
-                    Livewire.dispatch('add-product', JSON.stringify(products[0]));
+                    addProductToCart(JSON.stringify(products[0]));
 
                     searchInput_product.value = '';
                     resetToActiveTab();
@@ -929,27 +934,26 @@
 
 
 
-        // KHR → round to nearest 100; shared by card display AND cart
+        // Unit price display. Riel is truncated to whole riel (250.51 → 250,
+        // never 251) and never stepped — only the cart's payable total snaps
+        // to the 100៛ grid.
         function fmtMoney(base, factor, currency_name, zeroLabel = '') {
             let value = Number(base) * Number(factor);
             if (!value) return zeroLabel;
 
             const f = Number(factor);
-            let roundTo = 1,
-                decimal;
+            let decimal;
             if (f === 1) {
                 decimal = 3;
             } else if (f >= 4000) {
                 decimal = 0;
-                roundTo = 100;
-            } // 🔥 drop last 2 digits
-            else if (f >= 100) {
+                // round() first so float dust (250.9999999) truncates as 251, not 250
+                value = Math.floor(Math.round(value * 1e6) / 1e6);
+            } else if (f >= 100) {
                 decimal = 3;
             } else {
                 decimal = 2;
             }
-
-            if (roundTo > 1) value = Math.round(value / roundTo) * roundTo;
 
             return value.toLocaleString('en-US', {
                 minimumFractionDigits: 0,
@@ -962,18 +966,157 @@
 
 
 
-        function initAddToCartButtons() {
+        /**
+         * Adds a product, showing a placeholder row for the round-trip.
+         *
+         * The cart is server-rendered, so between the tap and Livewire's reply
+         * there was no feedback at all — on a slow till that reads as a dropped
+         * tap and staff tap again.
+         */
+        function addProductToCart(productJson) {
+            showCartAddSkeleton(productJson);
+            Livewire.dispatch('add-product', productJson);
+        }
 
-            document.querySelectorAll('.add-to-cart-btn').forEach(btn => {
-                btn.removeEventListener('click', btn
-                    ._addToCartListener); // remove old listener if exists
-                btn._addToCartListener = () => {
-                    const productJson = btn.dataset.product; // keep JSON string
-                    Livewire.dispatch('add-product', productJson);
-                };
-                btn.addEventListener('click', btn._addToCartListener);
+        /** True when the cart already holds this product id — addProduct() then
+         *  just increments qty on the existing row, so no new row is coming and a
+         *  placeholder would be a lie. Matching on id alone mirrors the server. */
+        function cartAlreadyHas(productJson) {
+            try {
+                const id = JSON.parse(productJson)?.id;
+                return id != null &&
+                    document.querySelector(`.ci-card[data-cart-id="${CSS.escape(String(id))}"]`) !== null;
+            } catch {
+                return false; // unparseable payload: show the placeholder rather than swallow it
+            }
+        }
+
+        /** addProduct() refuses a stock line with no warehouse ("Select a warehouse
+         *  first"), so nothing is coming and a placeholder would flash for nothing.
+         *  No select rendered means there is only one warehouse and it is already
+         *  chosen — that case must still show the placeholder. */
+        function saleWarehouseMissing() {
+            const sel = document.getElementById('saleWarehouseSelect');
+            return !!sel && sel.value === '';
+        }
+
+        function showCartAddSkeleton(productJson) {
+            if (cartAlreadyHas(productJson) || saleWarehouseMissing()) return;
+
+            const list = document.getElementById('cartLines');
+            if (!list) return;
+
+            // The "No items in cart" panel is taller than the placeholder, so
+            // leaving it up puts the first item below an empty-cart message.
+            document.querySelector('[data-cart-empty]')?.setAttribute('hidden', '');
+
+            const row = document.createElement('div');
+            row.className = 'ci-skeleton';
+            row.dataset.cartSkeleton = '1';
+            row.innerHTML =
+                '<div style="flex:1 1 auto;min-width:0;">' +
+                '<div class="sk" style="width:62%"></div>' +
+                '<div class="sk" style="width:38%;margin-top:8px;height:9px"></div>' +
+                '</div>' +
+                '<div class="sk" style="width:64px;flex-shrink:0"></div>';
+
+            // #total (the totals + action bar) is a CHILD of #cartLines, not a
+            // sibling, so appending would drop the placeholder below the buttons.
+            const totals = document.getElementById('total');
+            if (totals && totals.parentNode === list) {
+                list.insertBefore(row, totals);
+            } else {
+                list.appendChild(row);
+            }
+
+            row.scrollIntoView({ block: 'nearest' });
+        }
+
+        /**
+         * Row expand/collapse, entirely in the browser.
+         *
+         * This was $openIndex on the server, so every tap cost a Livewire
+         * round-trip to open a panel. Nothing else ever read it, so the browser
+         * owns it now.
+         *
+         * Keyed on the cart item id, not the loop index: removing a row shifts
+         * every index below it, which would leave a different line hanging open.
+         */
+        let openCartRowId = null;
+
+        function toggleCartRowInstant(header) {
+            const card = header.closest('.ci-card');
+            if (!card) return;
+
+            const id = card.dataset.cartId;
+            openCartRowId = openCartRowId === id ? null : id;
+            applyCartRowOpenState();
+        }
+
+        function applyCartRowOpenState() {
+            document.querySelectorAll('.ci-card').forEach(card => {
+                const open = openCartRowId !== null && card.dataset.cartId === openCartRowId;
+                card.querySelector('.ci-panel')?.classList.toggle('ci-open', open);
+                card.querySelector('.ci-chevron')?.classList.toggle('ci-open', open);
             });
         }
+
+        /**
+         * Header +/- quantity stepper.
+         *
+         * The number moves immediately and the server is told once, ~350ms after
+         * the last tap, as an ABSOLUTE quantity — the same rule qty_stepper.js
+         * follows. Sending a delta per tap lets a re-render re-baseline the row
+         * mid-flight, which makes the count jump backwards under fast tapping.
+         */
+        const cartQtyCommitTimers = new WeakMap();
+
+        function stepCartQty(btn, delta) {
+            const wrap = btn.closest('.ci-qty-step');
+            const card = btn.closest('.ci-card');
+            if (!wrap || !card) return;
+
+            const valEl = card.querySelector('.ci-qty-val');
+            if (!valEl) return;
+
+            const stock = parseFloat(card.dataset.cartStock);
+
+            let qty = Math.round(((parseFloat(valEl.textContent) || 0) + delta) * 100) / 100;
+            qty = Math.max(0.01, qty);
+            if (Number.isFinite(stock) && qty > stock) qty = stock;
+
+            valEl.textContent = qty;
+
+            clearTimeout(cartQtyCommitTimers.get(wrap));
+            cartQtyCommitTimers.set(wrap, setTimeout(() => {
+                Livewire.dispatch('set-qty', { index: Number(card.dataset.cartIndex), qty });
+            }, 350));
+        }
+
+        function removeCartAddSkeletons() {
+            document.querySelectorAll('[data-cart-skeleton]').forEach(el => el.remove());
+            // Put the empty-cart panel back if the add never landed; when it did,
+            // the morph drops the panel anyway because the cart is no longer empty.
+            document.querySelector('[data-cart-empty]')?.removeAttribute('hidden');
+        }
+
+        // Any server-side refusal the pre-checks do not cover — out of stock,
+        // price not set — clears the placeholder rather than leaving it hanging.
+        window.addEventListener('product_item_prevented', removeCartAddSkeletons);
+
+        document.addEventListener('livewire:init', () => {
+            // respond() fires BEFORE the DOM morph, so Livewire never has to
+            // reconcile a node the server did not send. fail() covers a commit
+            // that errors out, where no morph happens and the placeholder would
+            // otherwise sit there for good.
+            Livewire.hook('commit', ({ respond, succeed, fail }) => {
+                respond(removeCartAddSkeletons);
+                fail(removeCartAddSkeletons);
+                // The server renders every panel closed now, so re-apply the open
+                // row after the morph — otherwise editing a qty snaps it shut.
+                succeed(applyCartRowOpenState);
+            });
+        });
 
         window.addEventListener('stock-alert', event => {
             alert(event.detail.message);
@@ -4624,6 +4767,17 @@
                             <option value="N/A">N/A</option>
                         </select>
 
+                        {{-- Shortcuts for the two date inputs beside them — they set
+                             the same from/to the server already filters on. --}}
+                        <div id="saleOrderQuickRange" class="flex items-center gap-1 shrink-0">
+                            <button type="button" data-range="today" onclick="setSaleOrderDateRange('today')"
+                                class="px-2.5 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 text-sm hover:bg-gray-100 whitespace-nowrap">{{ __('Today') }}</button>
+                            <button type="button" data-range="yesterday" onclick="setSaleOrderDateRange('yesterday')"
+                                class="px-2.5 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 text-sm hover:bg-gray-100 whitespace-nowrap">{{ __('Yesterday') }}</button>
+                            <button type="button" data-range="week" onclick="setSaleOrderDateRange('week')"
+                                class="px-2.5 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 text-sm hover:bg-gray-100 whitespace-nowrap">{{ __('This Week') }}</button>
+                        </div>
+
                         <input type="date" id="so_from_posting_dateInput"
                             class="min-w-[130px] rounded-lg border border-gray-300 px-2 py-1.5 text-sm">
 
@@ -4634,27 +4788,6 @@
                             class="min-w-[90px] bg-red-500 hover:bg-red-600 text-white px-3 py-1.5 rounded-lg text-sm">
                             {{ __('Clear') }}
                         </button>
-
-                        {{-- Bulk-marks every order matching the CURRENT filters as
-                             Delivered. Server re-applies the same visibility scope and
-                             filters, so a cashier can only ever affect their own orders. --}}
-                        @if (Auth::user()->hasPermission('pos_sale.mark_delivered'))
-                            <button type="button" id="markAllDeliveredBtn" onclick="markAllDelivered()"
-                                class="min-w-[150px] bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-sm
-                                       disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5">
-                                <i class="fa-solid fa-truck-fast"></i>
-                                {{ __('Mark All Delivered') }}
-                            </button>
-                        @endif
-
-                        @if (Auth::user()->hasPermission('pos_sale.mark_all_paid'))
-                            <button type="button" id="markAllPaidBtn" onclick="markAllPaid()"
-                                class="min-w-[150px] bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg text-sm
-                                       disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5">
-                                <i class="fa-solid fa-money-bill-wave"></i>
-                                {{ __('Mark All Paid') }}
-                            </button>
-                        @endif
 
                     </div>
 
@@ -4696,23 +4829,48 @@
                 </div>
 
                 <!-- FOOTER -->
-                <div class="flex justify-between items-center mt-4">
+                <div class="flex justify-between items-center mt-3 gap-3">
+
+                    <div class="flex flex-wrap items-center gap-2">
+
+                        {{-- Bulk-marks every order matching the CURRENT filters. The
+                             server re-applies the same visibility scope and filters, so
+                             a cashier can only ever affect their own orders. Sits here
+                             rather than in the filter bar: it acts on the whole result
+                             set, not on the row selection beside it. --}}
+                        @if (Auth::user()->hasPermission('pos_sale.mark_delivered'))
+                            <button type="button" id="markAllDeliveredBtn" onclick="markAllDelivered()"
+                                class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-sm
+                                       disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5">
+                                <i class="fa-solid fa-truck-fast text-xs"></i>
+                                {{ __('Mark All Delivered') }}
+                            </button>
+                        @endif
+
+                        @if (Auth::user()->hasPermission('pos_sale.mark_all_paid'))
+                            <button type="button" id="markAllPaidBtn" onclick="markAllPaid()"
+                                class="bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded-lg text-sm
+                                       disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5">
+                                <i class="fa-solid fa-money-bill-wave text-xs"></i>
+                                {{ __('Mark All Paid') }}
+                            </button>
+                        @endif
 
                     {{-- Hidden until a row is selected (selectSaleOrderRow() reveals
                          it) — same actions as the right-click menu, for anyone who
                          prefers clicking a row then a button over right-clicking. --}}
-                    <div id="saleOrderRowActions" class="hidden flex-wrap items-center gap-3">
+                    <div id="saleOrderRowActions" class="hidden flex-wrap items-center gap-2">
 
                         <!-- View Line Button -->
                         <button onclick="viewSelectedSaleOrderLine()"
-                            class=" group relative overflow-hidden px-5 py-2.5 rounded-xl
+                            class=" group relative overflow-hidden px-3 py-1.5 rounded-lg text-sm
                                 bg-gradient-to-r from-sky-500 to-blue-600
                                 hover:from-sky-600 hover:to-blue-700
-                                text-white font-semibold shadow-md hover:shadow-xl
+                                text-white font-medium shadow-sm hover:shadow-md
                                 transition-all duration-300 active:scale-95">
 
-                            <span class="relative flex items-center gap-2">
-                                <i class="fa-solid fa-eye text-sm"></i>
+                            <span class="relative flex items-center gap-1.5">
+                                <i class="fa-solid fa-eye text-xs"></i>
                                 View Line
                             </span>
 
@@ -4724,15 +4882,15 @@
 
                         <!-- Sale Return Button -->
                         <button onclick="SaleReturn()"
-                            class="group relative overflow-hidden px-5 py-2.5 rounded-xl
+                            class="group relative overflow-hidden px-3 py-1.5 rounded-lg text-sm
                                 bg-gradient-to-r from-rose-500 to-red-600
                                 hover:from-rose-600 hover:to-red-700
-                                text-white font-semibold shadow-md hover:shadow-xl
+                                text-white font-medium shadow-sm hover:shadow-md
                                 transition-all duration-300 active:scale-95
                                 {{ Auth::user()->hasPermission('pos_sale.sell') ? '' : 'hidden' }}">
 
-                            <span class="relative flex items-center gap-2">
-                                <i class="fa-solid fa-arrow-rotate-left text-sm"></i>
+                            <span class="relative flex items-center gap-1.5">
+                                <i class="fa-solid fa-arrow-rotate-left text-xs"></i>
                                 Sale Return
                             </span>
 
@@ -4744,14 +4902,14 @@
 
                         <!-- Print Invoice Button -->
                         <button onclick="printSelectedSaleOrderInvoice()"
-                            class="group relative overflow-hidden px-5 py-2.5 rounded-xl
+                            class="group relative overflow-hidden px-3 py-1.5 rounded-lg text-sm
                                 bg-gradient-to-r from-slate-700 to-slate-900
                                 hover:from-slate-800 hover:to-black
-                                text-white font-semibold shadow-md hover:shadow-xl
+                                text-white font-medium shadow-sm hover:shadow-md
                                 transition-all duration-300 active:scale-95">
 
-                            <span class="relative flex items-center gap-2">
-                                <i class="fa-solid fa-file-invoice text-sm"></i>
+                            <span class="relative flex items-center gap-1.5">
+                                <i class="fa-solid fa-file-invoice text-xs"></i>
                                 Print Invoice
                             </span>
 
@@ -4764,6 +4922,8 @@
                         {{-- Delivery Note / Receipt / Picking List live in the sale
                              order detail modal instead — the list keeps only the
                              invoice, which is the one printed straight off a row. --}}
+
+                        </div>
 
                     </div>
 
@@ -5501,7 +5661,13 @@
                 </div>
                 &ensp;
                 {{-- Cart Items --}}
-                <div class="overflow-hidden rounded-2xl border bg-white shadow-sm">
+                {{-- relative z-0 traps the table inside its own stacking context.
+                     #Table-sale-list thead th is `position: sticky; z-index: 10`
+                     (style.css), and without a positioned ancestor that 10 escapes
+                     into the modal's context and paints the navy header over the
+                     customer suggestions above it. Boxed in at z-0, nothing inside
+                     can outrank the z-30 customer card. --}}
+                <div class="relative z-0 overflow-hidden rounded-2xl border bg-white shadow-sm">
                     <div class="flex items-center justify-between border-b bg-white px-4 py-3">
                         <h3 class="flex items-center gap-2 font-bold text-gray-800">
                             <i class="fa-solid fa-boxes-stacked text-gray-400"></i>

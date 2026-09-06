@@ -46,12 +46,6 @@ class PurchaseCart extends Component
 
     public $grn_date;
 
-    public $openIndex = null;
-
-    public function toggleItem($index)
-    {
-        $this->openIndex = $this->openIndex === $index ? null : $index;
-    }
 
 
     public function mount_wh()
@@ -199,6 +193,39 @@ class PurchaseCart extends Component
             ? \App\Models\Bin::where('warehouse_id', $value)->orderBy('name')->get(['id', 'name'])->toArray()
             : [];
     }
+    /**
+     * #vendorValue is bound with wire:model.live, so picking a vendor — on the
+     * purchase screen or inside the preview — lands here. Mirrors the sale
+     * side's updatedCustomerId() -> selectcustomer().
+     *
+     * Without this the id changed but vendor_name stayed on the 'General vendor'
+     * placeholder, so realVendorName() returned '' and every preview and posted
+     * GRN went out with a blank vendor.
+     */
+    public function updatedVendorId($value)
+    {
+        $this->selectVendor($value);
+    }
+
+    public function selectVendor($vendorId)
+    {
+        // find(), not where('code') — #vendorValue carries the primary key, which
+        // is what /vendor-search returns and what post_grn() resolves against.
+        $vendor = $vendorId ? Vendor::find($vendorId) : null;
+
+        if ($vendor) {
+            $this->vendor_name     = $vendor->name;
+            $this->vendor_phone    = $vendor->phone1 ?? '';
+            $this->vendor_address1 = $vendor->address1 ?? '';
+            $this->vendor_address2 = $vendor->address2 ?? '';
+        } else {
+            $this->vendor_name     = 'General vendor';
+            $this->vendor_phone    = '';
+            $this->vendor_address1 = '';
+            $this->vendor_address2 = '';
+        }
+    }
+
     private function getRielCurrency()
     {
         return Currency::where('code', '៛')->firstOrFail();

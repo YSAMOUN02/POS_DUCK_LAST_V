@@ -29,21 +29,24 @@
         @php
             // =========================================================
             // CURRENCY DISPLAY RULES  (ported from the Sales/POS cart)
-            //  - $step    : rounding step applied to PER-UNIT prices only
-            //               (KHR -> 100, so every unit cost ends in 00)
             //  - $decimal : decimals for the FINAL formatted amount
             //
-            // KEY RULE (WYSIWYG):
-            //   round the UNIT cost first, THEN multiply by qty.
-            //   => displayed unit x qty == displayed line, exactly.
-            //   The total sums these same per-line values, so the screen
-            //   and the printed PO reconcile to the last digit.
+            // KEY RULE:
+            //   unit costs are the converted value, truncated to whole riel
+            //   (250.51 shows 250, never 251), then multiplied by qty. The
+            //   total sums those displayed lines, so the screen and the
+            //   printed PO reconcile to the last digit.
             //
-            //  NOTE: stepping/format affect DISPLAY ONLY. The stored USD
-            //  cost_price / amount_line / totals are never changed, so
-            //  costs and margins computed elsewhere stay exact.
+            //   Unlike the sales cart, the total is NOT snapped to 100៛: that
+            //   step exists because a till cannot tender a coin under 100៛,
+            //   which is not a constraint on what a supplier invoices.
+            //
+            //  NOTE: format affects DISPLAY ONLY. The stored USD cost_price /
+            //  amount_line / totals are never changed, so costs and margins
+            //  computed elsewhere stay exact.
             // =========================================================
             $factor = (float) ($this->factor ?: 1);
+            $truncate = $factor >= 4000; // riel is never quoted in fractions of a riel
 
             if ($factor == 1) {
                 // 3dp: purchase costs are often quoted per-unit to a tenth of a
@@ -51,26 +54,23 @@
                 // Trailing zeros are trimmed by $money, so whole amounts still
                 // read as "12" rather than "12.000".
                 $decimal = 3;
-                $step = 0;
                 $thousands = ''; // USD
             } elseif ($factor >= 4000) {
                 $decimal = 0;
-                $step = 0;
-                $thousands = ','; // KHR -> unit ends in 00
+                $thousands = ','; // KHR
             } elseif ($factor >= 100) {
                 $decimal = 3;
-                $step = 0;
                 $thousands = ''; // mid-rate
             } else {
                 $decimal = 2;
-                $step = 0;
                 $thousands = ''; // fallback
             }
 
-            // round a BASE (USD) per-unit value into stepped display currency
-            $unitDisp = function ($baseUnit) use ($factor, $step, $decimal) {
+            // a BASE (USD) per-unit value in display currency
+            $unitDisp = function ($baseUnit) use ($factor, $decimal, $truncate) {
                 $v = (float) $baseUnit * $factor;
-                return $step > 0 ? round($v / $step) * $step : round($v, $decimal);
+                // round() first so float dust (250.9999999) truncates as 251, not 250
+                return $truncate ? floor(round($v, 6)) : round($v, $decimal);
             };
 
             // format a FINAL display-currency amount — NO thousands (for <input> values)
@@ -86,22 +86,22 @@
     return strpos($s, '.') !== false ? rtrim(rtrim($s, '0'), '.') : $s;
 };
 
-// PER-UNIT cost display (stepped, with thousands) e.g. 72,200
+// PER-UNIT cost display (with thousands) e.g. 72,150
 $priceFmt = function ($baseUnit) use ($unitDisp, $money) {
     return $money($unitDisp($baseUnit));
 };
 
-// PER-UNIT cost for <input> (stepped, no thousands) e.g. 72200
+// PER-UNIT cost for <input> (no thousands) e.g. 72150
 $priceInput = function ($baseUnit) use ($unitDisp, $money_no_format) {
     return $money_no_format($unitDisp($baseUnit));
 };
 
-// WYSIWYG line (display): stepped unit x qty, with thousands  e.g. 72,200 x 3 = 216,600
+// line (display): unit x qty, with thousands  e.g. 72,150 x 3 = 216,450
 $fmtLine = function ($baseUnit, $qty) use ($unitDisp, $money) {
     return $money($unitDisp($baseUnit) * (float) $qty);
 };
 
-// WYSIWYG line for <input>: stepped unit x qty, no thousands
+// line for <input>: unit x qty, no thousands
 $lineInput = function ($baseUnit, $qty) use ($unitDisp, $money_no_format) {
     return $money_no_format($unitDisp($baseUnit) * (float) $qty);
 };
@@ -148,6 +148,43 @@ foreach ($cart as $__it) {
 
                 .ci-card:focus-within {
                     background: oklch(0.99 0.02 95);
+                }
+
+                /* Placeholder row shown between the tap on a product and the
+                   add-product round-trip returning. Same box as .ci-card so the
+                   list does not jump when the real row replaces it. */
+                .ci-skeleton {
+                    background: #fff;
+                    border: 1px solid var(--ci-border);
+                    border-radius: 14px;
+                    box-shadow: 0 1px 2px oklch(0.7 0.02 95 / 0.18);
+                    padding: 12px 14px;
+                    margin-top: 4px;
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: space-between;
+                    gap: 10px;
+                    animation: ci-row-in 0.25s ease both;
+                }
+
+                .ci-skeleton .sk {
+                    background: linear-gradient(90deg,
+                            oklch(0.93 0.006 95) 25%,
+                            oklch(0.97 0.004 95) 37%,
+                            oklch(0.93 0.006 95) 63%);
+                    background-size: 400% 100%;
+                    animation: ci-sk-shimmer 1.2s ease-in-out infinite;
+                    border-radius: 4px;
+                    height: 11px;
+                }
+
+                @keyframes ci-sk-shimmer {
+                    from { background-position: 100% 50%; }
+                    to   { background-position: 0 50%; }
+                }
+
+                @media (prefers-reduced-motion: reduce) {
+                    .ci-skeleton .sk { animation: none; }
                 }
 
                 @keyframes ci-row-in {
@@ -235,6 +272,35 @@ foreach ($cart as $__it) {
                     font-weight: 500;
                     font-size: 10px;
                 }
+
+                /* Header qty stepper — adjust a line without opening the row. */
+                /* Qty stepper: sits under the line total in the right column. */
+                .ci-qty-step {
+                    display: flex;
+                    justify-content: flex-end;
+                    gap: 6px;
+                    margin-top: 6px;
+                }
+
+                .ci-step {
+                    width: 24px;
+                    height: 22px;
+                    line-height: 1;
+                    border: 1px solid var(--ci-border);
+                    border-radius: 6px;
+                    background: #fff;
+                    color: var(--ci-ink);
+                    font-size: 14px;
+                    font-weight: 700;
+                    cursor: pointer;
+                    padding: 0;
+                }
+
+                .ci-step:hover { background: oklch(0.96 0.01 95); }
+                .ci-step:active { transform: scale(0.92); }
+
+
+
 
                 .ci-price-line {
                     margin: 6px 0 0;
@@ -399,15 +465,19 @@ foreach ($cart as $__it) {
                     {{-- data-* drive the right-click quantity stepper (qty_stepper.js),
                          shared with the sales cart. --}}
                     <div class="ci-card" data-cart-index="{{ $loop->index }}"
+                        data-cart-id="{{ $item['id'] }}"
                         data-cart-name="{{ $item['name'] ?? '' }}" data-cart-qty="{{ $item['qty'] ?? 0 }}"
                         data-cart-locked="0">
 
                         {{-- ===== Header (clickable) ===== --}}
-                        <div class="ci-header" wire:click="toggleItem({{ $loop->index }})">
+                        {{-- Expand/collapse is browser-only: nothing but this panel
+                             ever read $openIndex, so a Livewire round-trip per tap
+                             bought nothing. Mirrors the sales cart. --}}
+                        <div class="ci-header" onclick="toggleCartRowInstant(this)">
 
                             <div class="ci-left">
                                 <div class="ci-controls">
-                                    <span class="ci-chevron {{ $openIndex === $loop->index ? 'ci-open' : '' }}">▾</span>
+                                    <span class="ci-chevron">▾</span>
                                     <button class="ci-remove" title="Remove item"
                                         wire:click.stop="removeItem({{ $item['id'] }})">
                                         <i class="fa-solid fa-delete-left fa-flip-horizontal"></i>
@@ -420,7 +490,9 @@ foreach ($cart as $__it) {
                                         <span class="ci-description">
                                             {{ $item['name'] }}
                                         </span>
-                                        <span class="ci-qty"> × {{ $qtyFmt($item['qty']) }} {{ $item['unit'] }}</span>
+                                        {{-- qty lives in the right column, not here: a long
+                                             name wraps and would push it to a ragged position
+                                             mid-sentence instead of lining up with the total. --}}
                                     </p>
 
                                     <p class="ci-price-line number-change">
@@ -432,14 +504,25 @@ foreach ($cart as $__it) {
 
                             {{-- amount + currency on ONE line --}}
                             <div class="ci-total">
+                                <div class="ci-qty">× <span class="ci-qty-val">{{ $qtyFmt($item['qty']) }}</span>
+                                    {{ $item['unit'] }}</div>
+
                                 <span
                                     class="ci-total-amount number-change">{{ $fmtLine($item['cost_price'], $item['qty']) }}</span><span
                                     class="ci-total-currency">{{ $this->currency_name }}</span>
+
+                                {{-- stopPropagation so stepping does not also toggle the row --}}
+                                <div class="ci-qty-step" onclick="event.stopPropagation()">
+                                    <button type="button" class="ci-step"
+                                        onclick="stepCartQty(this, -1)" aria-label="Decrease">-</button>
+                                    <button type="button" class="ci-step"
+                                        onclick="stepCartQty(this, 1)" aria-label="Increase">+</button>
+                                </div>
                             </div>
                         </div>
 
                         {{-- ===== Dropdown editor ===== --}}
-                        <div class="ci-panel bonus {{ $openIndex === $loop->index ? 'ci-open' : '' }}">
+                        <div class="ci-panel bonus">
                             <div class="ci-panel-inner" wire:key="row-{{ $loop->index }}-{{ $this->factor }}">
 
                                 {{-- QTY --}}
@@ -520,7 +603,10 @@ foreach ($cart as $__it) {
 
             @empty
 
-                <div class="flex flex-col items-center justify-center py-6 px-6 text-center">
+                {{-- data-cart-empty: hidden while the add placeholder shows, so
+                     the first item does not sit under "No items in cart". --}}
+                <div data-cart-empty
+                    class="flex flex-col items-center justify-center py-6 px-6 text-center">
 
                     <img src="{{ asset('assets/defult/cart.png') }}" alt="Empty Cart"
                         class="w-24 h-24 lg:w-28 lg:h-28 object-contain opacity-80">

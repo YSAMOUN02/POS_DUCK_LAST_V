@@ -183,7 +183,9 @@
             if (f === 1) {
                 decimal = 3;
             } else if (f >= 4000) {
-                decimal = 0; // KHR
+                decimal = 0; // KHR — truncated to whole riel, 250.51 shows 250
+                // round() first so float dust (250.9999999) truncates as 251, not 250
+                value = Math.floor(Math.round(value * 1e6) / 1e6);
             } else if (f >= 100) {
                 decimal = 3;
             } else {
@@ -426,7 +428,10 @@
                 tabContent.innerHTML = html;
 
                 // Initialize buttons (if you have any JS logic for add-to-cart)
-                initAddToCartButtons();
+                {{-- No per-button binding: the delegated click handler on
+                     #tab-content already covers every card, before and after a
+                     re-render. Binding again on top of it fired twice per tap —
+                     two skeletons, and two add-product dispatches. --}}
 
             } catch (err) {
                 tabContent.innerHTML = '<p class="p-4 text-red-500">Failed to load products.</p>';
@@ -449,7 +454,7 @@
             const productJson = btn.dataset.product;
 
 
-            Livewire.dispatch('add-product', productJson); // ONLY this
+            addProductToPurchaseCart(productJson); // ONLY this
         });
 
         const searchInput_product = document.getElementById('search-dropdown');
@@ -531,7 +536,7 @@
 
                 // 🔥 BARCODE MODE: exact single match → add to cart directly
                 if (field === 'bar_code' && products.length === 1) {
-                    Livewire.dispatch('add-product', JSON.stringify(products[0]));
+                    addProductToPurchaseCart(JSON.stringify(products[0]));
 
                     searchInput_product.value = '';
                     resetToActiveTab();
@@ -658,17 +663,136 @@
 
 
 
-        function initAddToCartButtons() {
+        /**
+         * Adds a product, showing a placeholder row for the round-trip.
+         *
+         * The cart is server-rendered, so between the tap and Livewire's reply
+         * there was no feedback at all — on a slow till that reads as a dropped
+         * tap and staff tap again. Mirrors the sales cart.
+         */
+        function addProductToPurchaseCart(productJson) {
+            showPurchaseAddSkeleton(productJson);
+            Livewire.dispatch('add-product', productJson);
+        }
 
-            document.querySelectorAll('.add-to-cart-btn').forEach(btn => {
-                btn.removeEventListener('click', btn._addToCartListener); // remove old listener if exists
-                btn._addToCartListener = () => {
-                    const productJson = btn.dataset.product; // keep JSON string
-                    Livewire.dispatch('add-product', productJson);
-                };
-                btn.addEventListener('click', btn._addToCartListener);
+        /** True when the cart already holds this product id — addProduct() then
+         *  just increments qty on the existing row, so no new row is coming and a
+         *  placeholder would be a lie. Matching on id alone mirrors the server. */
+        function cartAlreadyHas(productJson) {
+            try {
+                const id = JSON.parse(productJson)?.id;
+                return id != null &&
+                    document.querySelector(`.ci-card[data-cart-id="${CSS.escape(String(id))}"]`) !== null;
+            } catch {
+                return false; // unparseable payload: show the placeholder rather than swallow it
+            }
+        }
+
+        function showPurchaseAddSkeleton(productJson) {
+            if (cartAlreadyHas(productJson)) return;
+
+            // The rows and #total are siblings, so the totals block is the anchor
+            // to insert before — appending would drop it below the totals.
+            const totals = document.getElementById('total');
+            if (!totals || !totals.parentNode) return;
+
+            // The "No items in cart" panel is taller than the placeholder, so
+            // leaving it up puts the first item below an empty-cart message.
+            document.querySelector('[data-cart-empty]')?.setAttribute('hidden', '');
+
+            const row = document.createElement('div');
+            row.className = 'ci-skeleton';
+            row.dataset.cartSkeleton = '1';
+            row.innerHTML =
+                '<div style="flex:1 1 auto;min-width:0;">' +
+                '<div class="sk" style="width:62%"></div>' +
+                '<div class="sk" style="width:38%;margin-top:8px;height:9px"></div>' +
+                '</div>' +
+                '<div class="sk" style="width:64px;flex-shrink:0"></div>';
+
+            totals.parentNode.insertBefore(row, totals);
+            row.scrollIntoView({ block: 'nearest' });
+        }
+
+        /**
+         * Header +/- quantity stepper.
+         *
+         * The number moves immediately and the server is told once, ~350ms after
+         * the last tap, as an ABSOLUTE quantity — the same rule qty_stepper.js
+         * follows. Sending a delta per tap lets a re-render re-baseline the row
+         * mid-flight, which makes the count jump backwards under fast tapping.
+         *
+         * No stock ceiling here: a purchase is stock coming in, not going out.
+         */
+        const cartQtyCommitTimers = new WeakMap();
+
+        function stepCartQty(btn, delta) {
+            const wrap = btn.closest('.ci-qty-step');
+            const card = btn.closest('.ci-card');
+            if (!wrap || !card) return;
+
+            const valEl = card.querySelector('.ci-qty-val');
+            if (!valEl) return;
+
+            let qty = Math.round(((parseFloat(valEl.textContent) || 0) + delta) * 100) / 100;
+            qty = Math.max(0.01, qty);
+
+            valEl.textContent = qty;
+
+            clearTimeout(cartQtyCommitTimers.get(wrap));
+            cartQtyCommitTimers.set(wrap, setTimeout(() => {
+                Livewire.dispatch('set-qty', { index: Number(card.dataset.cartIndex), qty });
+            }, 350));
+        }
+
+        function removePurchaseAddSkeletons() {
+            document.querySelectorAll('[data-cart-skeleton]').forEach(el => el.remove());
+            // Put the empty-cart panel back if the add never landed; when it did,
+            // the morph drops the panel anyway because the cart is no longer empty.
+            document.querySelector('[data-cart-empty]')?.removeAttribute('hidden');
+        }
+
+        /**
+         * Row expand/collapse, entirely in the browser.
+         *
+         * This was $openIndex on the server, so every tap cost a Livewire
+         * round-trip to open a panel. Nothing else ever read it, so the browser
+         * owns it now.
+         *
+         * Keyed on the cart item id, not the loop index: removing a row shifts
+         * every index below it, which would leave a different line hanging open.
+         */
+        let openCartRowId = null;
+
+        function toggleCartRowInstant(header) {
+            const card = header.closest('.ci-card');
+            if (!card) return;
+
+            const id = card.dataset.cartId;
+            openCartRowId = openCartRowId === id ? null : id;
+            applyCartRowOpenState();
+        }
+
+        function applyCartRowOpenState() {
+            document.querySelectorAll('.ci-card').forEach(card => {
+                const open = openCartRowId !== null && card.dataset.cartId === openCartRowId;
+                card.querySelector('.ci-panel')?.classList.toggle('ci-open', open);
+                card.querySelector('.ci-chevron')?.classList.toggle('ci-open', open);
             });
         }
+
+        document.addEventListener('livewire:init', () => {
+            // respond() fires BEFORE the DOM morph, so Livewire never has to
+            // reconcile a node the server did not send. fail() covers a commit
+            // that errors out, where no morph happens.
+            Livewire.hook('commit', ({ respond, succeed, fail }) => {
+                respond(removePurchaseAddSkeletons);
+                fail(removePurchaseAddSkeletons);
+                // The server renders every panel closed now, so re-apply the open
+                // row after the morph — otherwise editing a qty snaps it shut.
+                succeed(applyCartRowOpenState);
+            });
+        });
 
         window.addEventListener('stock-alert', event => {
             alert(event.detail.message);

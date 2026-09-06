@@ -6157,8 +6157,58 @@ function clearSaleOrderFilters() {
         document.getElementById("sale_order_user_id").value = "";
     }
 
+    setSaleOrderRangeHighlight(null);
+
     loadSaleOrders(1);
 }
+
+/**
+ * Quick date ranges for the sale order list.
+ *
+ * Fills the same two date inputs the filter bar already sends, so the server
+ * needs no new parameters and the bulk Mark All buttons stay in step with what
+ * is on screen.
+ *
+ * Dates are formatted from local parts, never toISOString() — in +07:00 that
+ * would roll "today" back to yesterday for anything before 07:00.
+ */
+function setSaleOrderDateRange(range) {
+    const asInput = (d) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+            d.getDate(),
+        ).padStart(2, "0")}`;
+
+    const from = new Date();
+    let to = new Date();
+
+    if (range === "yesterday") {
+        from.setDate(from.getDate() - 1);
+        to = new Date(from);
+    } else if (range === "week") {
+        // Week starts Monday: getDay() is Sun=0, so shift it to Mon=0.
+        from.setDate(from.getDate() - ((from.getDay() + 6) % 7));
+    }
+
+    document.getElementById("so_from_posting_dateInput").value = asInput(from);
+    document.getElementById("so_to_posting_dateInput").value = asInput(to);
+
+    setSaleOrderRangeHighlight(range);
+
+    loadSaleOrders(1);
+}
+
+/** Marks which quick range is active; pass null to clear all three. */
+function setSaleOrderRangeHighlight(range) {
+    const on = ["bg-sky-600", "text-white", "border-sky-600"];
+    const off = ["bg-white", "text-gray-700", "border-gray-300"];
+
+    document.querySelectorAll("#saleOrderQuickRange [data-range]").forEach((b) => {
+        const active = b.dataset.range === range;
+        b.classList.remove(...(active ? off : on));
+        b.classList.add(...(active ? on : off));
+    });
+}
+
 function getDeliverySelect(status, rowId) {
     const options = Object.keys(statusMap);
 

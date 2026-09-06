@@ -77,7 +77,6 @@ class Cart extends Component
 
     /** id => name, limited to warehouses usable for selling. */
     public $saleWarehouses = [];
-    public $openIndex = null;
 
     // Sale Order Info
     public $document_no = 'NA';
@@ -93,10 +92,6 @@ class Cart extends Component
 
 
 
-    public function toggleItem($index)
-    {
-        $this->openIndex = $this->openIndex === $index ? null : $index;
-    }
 
     #[\Livewire\Attributes\On('set-item-lots')]
     public function setItemLots($index = null, $lots = [])
@@ -1073,24 +1068,15 @@ class Cart extends Component
             ? $totalNet
             : round($totalNet + $totalVatAmount, $precision);
 
-        // Riel snaps every unit price to a 100៛ grid before it is shown, so the
+        // Riel snaps the payable total to a 100៛ grid before it is shown, so the
         // figure on screen is NOT base-USD × factor. The cashier tenders what is
         // displayed, so that has to be what is owed — otherwise every riel sale
-        // banks a phantom balance: the cart showed 55,330៛, the header stored
-        // 55,800៛, and the order sat 470៛ short of Paid. Convert the stepped
-        // display back to USD at the order's own locked factor so the two agree.
+        // banks a phantom balance and the order sits short of Paid. Convert the
+        // stepped total back to USD at the order's own locked factor. Only the
+        // total moves; the lines it is built from are already exact.
         $display = $this->totalsDisplay;
         if (($display['step'] ?? 0) > 0 && ($display['factor'] ?? 1) > 1) {
-            $f = (float) $display['factor'];
-
-            return [
-                'total_original'   => round($display['total_original'] / $f, $precision),
-                'total_discount'   => round($display['total_discount'] / $f, $precision),
-                'total_net'        => round($display['total_net'] / $f, $precision),
-                'vat_status'       => round($display['vat_status'], $precision),
-                'total_vat_amount' => round($display['total_vat_amount'] / $f, $precision),
-                'grand_total'      => round($display['grand_total'] / $f, $precision),
-            ];
+            $grandTotal = $display['grand_total'] / (float) $display['factor'];
         }
 
         return [
@@ -1122,10 +1108,12 @@ class Cart extends Component
             $step = 0;
         }
 
-        // round ONE base-USD unit price to display currency (same as Blade $unitDisp)
-        $unitDisp = function ($baseUnit) use ($factor, $step, $decimal) {
+        // ONE base-USD unit price in display currency (same as Blade $unitDisp)
+        $truncate = $factor >= 4000; // riel is never quoted in fractions of a riel
+        $unitDisp = function ($baseUnit) use ($factor, $decimal, $truncate) {
             $v = (float) $baseUnit * $factor;
-            return $step > 0 ? round($v / $step) * $step : round($v, $decimal);
+            // round() first so float dust (250.9999999) truncates as 251, not 250
+            return $truncate ? floor(round($v, 6)) : round($v, $decimal);
         };
 
         $sub = 0.0;
@@ -1138,7 +1126,7 @@ class Cart extends Component
             $qty     = (float) ($item['qty'] ?? 0);
             $vatRate = (float) ($item['vat'] ?? 0);
 
-            // WYSIWYG: round unit FIRST, then × qty — exactly like the line cells
+            // exact unit × qty — exactly like the line cells
             $sub += $unitDisp($price)   * $qty;
             $net += $unitDisp($netUnit) * $qty;
             $vat += $unitDisp($netUnit * $vatRate / 100) * $qty;
@@ -1154,13 +1142,18 @@ class Cart extends Component
         $disc  = $sub - $net;
         $grand = ($this->cart_mode === 'expence') ? $net : ($net + $vat);
 
+        // Riel has no coin under 100៛, so the payable total is the ONE figure
+        // that snaps to the grid. Sub-total, discount and VAT stay exact, which
+        // means they need not sum to the total — that gap is the cash rounding.
+        $grand = $step > 0 ? round($grand / $step) * $step : round($grand, $decimal);
+
         return [
             'total_original'   => round($sub, $decimal),
             'total_discount'   => round($disc, $decimal),
             'total_net'        => round($net, $decimal),
             'total_vat_amount' => round($vat, $decimal),
             'vat_status'       => $vatStatus,
-            'grand_total'      => round($grand, $decimal),
+            'grand_total'      => $grand,
             'step'             => $step,
             'factor'           => $factor,
         ];
@@ -1855,44 +1848,25 @@ class Cart extends Component
         $r = fn($value) => round((float) $value, $precision);
 
         // =========================================================
-        // 🔥 WYSIWYG UNIT STEPPING  (mirror of Blade $unitDisp)
-        //  The screen rounds each UNIT price to the currency step
-        //  (KHR → nearest 100) BEFORE multiplying by qty. The saved
-        //  totals must follow the same rule, or the DB record won't
-        //  match the printed invoice.
+        //  TOTAL STEPPING  (mirror of Blade / getTotalsDisplay)
+        //  Unit prices and lines are saved exact. Only the payable
+        //  total snaps to the currency step (KHR → nearest 100), so
+        //  the DB record owes what the printed invoice asks for.
         // =========================================================
         $factor = (float) ($this->factor ?: 1);
+        $step   = $factor >= 4000 ? 100 : 0;
 
-        if ($factor >= 4000) {
-            $step = 100;
-            $decimal = 0;
-        }   // KHR
-        elseif ($factor == 1) {
-            $step = 0;
-            $decimal = 2;
-        }   // USD
-        elseif ($factor >= 100) {
-            $step = 0;
-            $decimal = 3;
-        }   // mid-rate
-        else {
-            $step = 0;
-            $decimal = 2;
-        }   // fallback
-
-        $snapUnit = function ($baseUnit) use ($factor, $step, $decimal) {
-            if ($factor == 1) {
-                return round((float) $baseUnit, $decimal);
+        $snapTotal = function ($baseGrand) use ($factor, $step, $precision) {
+            if ($step <= 0 || $factor <= 1) {
+                return round((float) $baseGrand, $precision);
             }
-            $disp = (float) $baseUnit * $factor;                          // → display ccy
-            $disp = $step > 0 ? round($disp / $step) * $step             // step round (KHR→100)
-                : round($disp, $decimal);
-            return $disp / $factor;                                       // → back to BASE
+            $disp = round(((float) $baseGrand * $factor) / $step) * $step; // → display, stepped
+            return round($disp / $factor, $precision);                     // → back to BASE
         };
 
         try {
 
-            DB::transaction(function () use ($payload, &$saleOrderNo, $precision, $r, $snapUnit) {
+            DB::transaction(function () use ($payload, &$saleOrderNo, $precision, $r, $snapTotal) {
                 $riel = Currency::where('code', '៛')->firstOrFail();
 
                 
@@ -1954,8 +1928,7 @@ class Cart extends Component
 
                     $qty = max(0.01, $r($cartItem['qty'] ?? 1));
 
-                    // 🔥 stepped unit price (base USD) — matches the screen line
-                    $sellPrice = $r($snapUnit($cartItem['price'] ?? $cartItem['sell_price'] ?? 0));
+                    $sellPrice = $r($cartItem['price'] ?? $cartItem['sell_price'] ?? 0);
 
                     $vatRate = $r($cartItem['vat'] ?? 0);
                     $discountPercent = min(max(0, $r($cartItem['discount_percent'] ?? 0)), 100);
@@ -2034,7 +2007,7 @@ class Cart extends Component
                     : 0;
                 $totalDiscount = $r($totalDiscount + $billDiscount);
 
-                $grandTotal = $r($totalAmount - $totalDiscount + $totalVAT);
+                $grandTotal = $snapTotal($totalAmount - $totalDiscount + $totalVAT);
 
                 $paidAmount = $r($payload['deposit_amount'] ?? 0);
                 $paidAmount = max(0, $paidAmount);                      // ← removed the min($paidAmount, $grandTotal) cap
@@ -2803,6 +2776,13 @@ class Cart extends Component
             $saleOrder->status = 'Returned';
             $saleOrder->return_remarks = '[Returned: ' . ($remark ?: 'No remark') . ']';
             $saleOrder->balance_amount = 0;
+            // Same close-out SaleOrderController::updateStatus() applies when a
+            // return is recorded from the order list. Without it a returned order
+            // kept payment_status 'Unpaid' and delivery_status 'Pending', so it sat
+            // in the unpaid filter for good — and Mark All Paid skips Returned, so
+            // it reported 0 changed and the row never cleared.
+            $saleOrder->payment_status = 'Refunded';
+            $saleOrder->delivery_status = 'Returned';
             $saleOrder->save();
 
             // 2. Create return invoice header (negative mirror) — totals
