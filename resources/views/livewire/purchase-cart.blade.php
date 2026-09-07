@@ -322,8 +322,14 @@ foreach ($cart as $__it) {
 
                 /* Line amount now sits after the unit price, so it needs to
                    separate from it and read darker than the muted price text. */
-                .ci-price-line .ci-total-amount {
+                .ci-price-line .ci-sep {
                     margin-left: 8px;
+                    color: var(--ci-border);
+                    font-weight: 400;
+                }
+
+                .ci-price-line .ci-total-amount {
+                    margin-left: 6px;
                     color: var(--ci-ink);
                 }
 
@@ -515,6 +521,7 @@ foreach ($cart as $__it) {
                                     <p class="ci-price-line number-change">
                                         តម្លៃ:
                                         {{ $priceFmt($item['cost_price']) }} {{ $this->currency_name }}
+                                        <span class="ci-sep">|</span>
                                         <span
                                             class="ci-total-amount">{{ $fmtLine($item['cost_price'], $item['qty']) }}</span><span
                                             class="ci-total-currency">{{ $this->currency_name }}</span>

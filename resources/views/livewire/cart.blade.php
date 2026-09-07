@@ -335,8 +335,14 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
 
                 /* Line amount now sits after the unit price, so it needs to
                    separate from it and read darker than the muted price text. */
-                .ci-price-line .ci-total-amount {
+                .ci-price-line .ci-sep {
                     margin-left: 8px;
+                    color: var(--ci-border);
+                    font-weight: 400;
+                }
+
+                .ci-price-line .ci-total-amount {
+                    margin-left: 6px;
                     color: var(--ci-ink);
                 }
 
@@ -718,6 +724,8 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                                             @else
                                                 {{ $priceFmt($item['price']) }} {{ $this->currency_name }}
                                             @endif
+
+                                            <span class="ci-sep">|</span>
 
                                             @if ($item['discount_percent'] != 0)
                                                 <del

@@ -5714,7 +5714,13 @@
                     </div>
 
                     <div class="overflow-x-auto">
-                        <table id="Table-sale-list" class="w-full text-sm">
+                        {{-- Own id, not Table-sale-list: that id belongs to the invoice
+                             list and style.css hangs a whole layout off it — a navy
+                             sticky header, and position:sticky + z-index:999 on the
+                             second column. Sharing it pulled that onto this table, so
+                             the Item column floated over its neighbours and the header
+                             padding stopped matching the body. --}}
+                        <table id="preview-line-table" class="w-full text-sm">
                             <thead class="bg-gray-100 text-gray-600">
                                 <tr>
                                     <th class="px-4 py-3 text-left">#</th>
