@@ -1062,35 +1062,68 @@
         }
 
         /**
-         * Header +/- quantity stepper.
+         * Header +/- quantity stepper. Keeps counting while the user taps and
+         * tells the server once, ~400ms after they stop, as an ABSOLUTE quantity.
          *
-         * The number moves immediately and the server is told once, ~350ms after
-         * the last tap, as an ABSOLUTE quantity — the same rule qty_stepper.js
-         * follows. Sending a delta per tap lets a re-render re-baseline the row
-         * mid-flight, which makes the count jump backwards under fast tapping.
+         * The count is held HERE, keyed by cart item id, not read back off the
+         * span: any Livewire re-render repaints that span from server state, so
+         * reading it meant a morph landing mid-burst reset the running total and
+         * swallowed taps. The pending value is re-asserted after every morph and
+         * dropped only once the server agrees.
+         *
+         * Timers are keyed by id too — a morph swaps the DOM node, so a WeakMap
+         * keyed on the element lost its handle and let a stale commit through.
          */
-        const cartQtyCommitTimers = new WeakMap();
+        const cartPendingQty = new Map();
+        const cartQtyTimers = new Map();
 
         function stepCartQty(btn, delta) {
-            const wrap = btn.closest('.ci-qty-step');
             const card = btn.closest('.ci-card');
-            if (!wrap || !card) return;
+            if (!card) return;
 
+            const id = card.dataset.cartId;
             const valEl = card.querySelector('.ci-qty-val');
-            if (!valEl) return;
+            if (!id || !valEl) return;
 
             const stock = parseFloat(card.dataset.cartStock);
+            const base = cartPendingQty.has(id)
+                ? cartPendingQty.get(id)
+                : (parseFloat(valEl.textContent) || 0);
 
-            let qty = Math.round(((parseFloat(valEl.textContent) || 0) + delta) * 100) / 100;
+            let qty = Math.round((base + delta) * 100) / 100;
             qty = Math.max(0.01, qty);
             if (Number.isFinite(stock) && qty > stock) qty = stock;
 
+            cartPendingQty.set(id, qty);
             valEl.textContent = qty;
 
-            clearTimeout(cartQtyCommitTimers.get(wrap));
-            cartQtyCommitTimers.set(wrap, setTimeout(() => {
-                Livewire.dispatch('set-qty', { index: Number(card.dataset.cartIndex), qty });
-            }, 350));
+            clearTimeout(cartQtyTimers.get(id));
+            cartQtyTimers.set(id, setTimeout(() => {
+                cartQtyTimers.delete(id);
+                // Read the row index at send time: rows renumber as lines come and go.
+                const row = document.querySelector(`.ci-card[data-cart-id="${CSS.escape(id)}"]`);
+                if (!row) return cartPendingQty.delete(id);
+                Livewire.dispatch('set-qty', { index: Number(row.dataset.cartIndex), qty });
+            }, 400));
+        }
+
+        /** Keeps the user's number on screen until the server catches up. */
+        function applyPendingCartQty() {
+            if (!cartPendingQty.size) return;
+
+            cartPendingQty.forEach((want, id) => {
+                const row = document.querySelector(`.ci-card[data-cart-id="${CSS.escape(id)}"]`);
+                if (!row) return cartPendingQty.delete(id);
+
+                const valEl = row.querySelector('.ci-qty-val');
+                if (!valEl) return;
+
+                if (!cartQtyTimers.has(id) && parseFloat(valEl.textContent) === want) {
+                    cartPendingQty.delete(id); // server agrees, stop overriding
+                } else {
+                    valEl.textContent = want;
+                }
+            });
         }
 
         function removeCartAddSkeletons() {
@@ -1114,7 +1147,11 @@
                 fail(removeCartAddSkeletons);
                 // The server renders every panel closed now, so re-apply the open
                 // row after the morph — otherwise editing a qty snaps it shut.
-                succeed(applyCartRowOpenState);
+                // Same for a qty still being tapped, which the morph would reset.
+                succeed(() => {
+                    applyCartRowOpenState();
+                    applyPendingCartQty();
+                });
             });
         });
 

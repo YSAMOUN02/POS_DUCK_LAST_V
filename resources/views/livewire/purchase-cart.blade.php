@@ -320,6 +320,20 @@ foreach ($cart as $__it) {
                     font-family: var(--ci-mono);
                 }
 
+                /* Line amount now sits after the unit price, so it needs to
+                   separate from it and read darker than the muted price text. */
+                .ci-price-line .ci-total-amount {
+                    margin-left: 8px;
+                    color: var(--ci-ink);
+                }
+
+                .ci-price-line .ci-line-was {
+                    margin-left: 8px;
+                    color: oklch(0.65 0.01 90);
+                    font-family: var(--ci-mono);
+                    font-size: 11.5px;
+                }
+
                 .ci-total-currency {
                     font-size: 11px;
                     color: var(--ci-faint);
@@ -495,21 +509,24 @@ foreach ($cart as $__it) {
                                              mid-sentence instead of lining up with the total. --}}
                                     </p>
 
+                                    {{-- unit cost and line amount read together: "8.2 $  24.6 $"
+                                         is cost × qty at a glance, so the amount sits here rather
+                                         than off in the right column away from what makes it. --}}
                                     <p class="ci-price-line number-change">
                                         តម្លៃ:
                                         {{ $priceFmt($item['cost_price']) }} {{ $this->currency_name }}
+                                        <span
+                                            class="ci-total-amount">{{ $fmtLine($item['cost_price'], $item['qty']) }}</span><span
+                                            class="ci-total-currency">{{ $this->currency_name }}</span>
                                     </p>
                                 </div>
                             </div>
 
-                            {{-- amount + currency on ONE line --}}
+                            {{-- qty over the stepper; the line amount reads with the
+                                 unit cost on the left instead --}}
                             <div class="ci-total">
                                 <div class="ci-qty">× <span class="ci-qty-val">{{ $qtyFmt($item['qty']) }}</span>
                                     {{ $item['unit'] }}</div>
-
-                                <span
-                                    class="ci-total-amount number-change">{{ $fmtLine($item['cost_price'], $item['qty']) }}</span><span
-                                    class="ci-total-currency">{{ $this->currency_name }}</span>
 
                                 {{-- stopPropagation so stepping does not also toggle the row --}}
                                 <div class="ci-qty-step" onclick="event.stopPropagation()">

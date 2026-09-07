@@ -333,6 +333,20 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                     font-family: var(--ci-mono);
                 }
 
+                /* Line amount now sits after the unit price, so it needs to
+                   separate from it and read darker than the muted price text. */
+                .ci-price-line .ci-total-amount {
+                    margin-left: 8px;
+                    color: var(--ci-ink);
+                }
+
+                .ci-price-line .ci-line-was {
+                    margin-left: 8px;
+                    color: oklch(0.65 0.01 90);
+                    font-family: var(--ci-mono);
+                    font-size: 11.5px;
+                }
+
                 .ci-total-currency {
                     font-size: 12px;
                     color: var(--ci-faint);
@@ -690,6 +704,10 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                                             @endif
                                         @endif
 
+                                        {{-- unit price and line amount read together:
+                                             "8.2 $  24.6 $" is price × qty at a glance,
+                                             so the amount sits here rather than off in
+                                             the right column away from what makes it. --}}
                                         <p class="ci-price-line number-change">
                                             តម្លៃ:
                                             @if ($item['discount_percent'] != 0)
@@ -700,28 +718,29 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                                             @else
                                                 {{ $priceFmt($item['price']) }} {{ $this->currency_name }}
                                             @endif
+
+                                            @if ($item['discount_percent'] != 0)
+                                                <del
+                                                    class="ci-line-was">{{ $fmtLine($item['price'], $item['qty']) }}</del>
+                                                <span
+                                                    class="ci-total-amount">{{ $fmtLine($item['discount_price'], $item['qty']) }}</span><span
+                                                    class="ci-total-currency">{{ $this->currency_name }}</span>
+                                            @else
+                                                <span
+                                                    class="ci-total-amount">{{ $fmtLine($item['price'], $item['qty']) }}</span><span
+                                                    class="ci-total-currency">{{ $this->currency_name }}</span>
+                                            @endif
                                         </p>
                                     </div>
                                 </div>
 
-                                {{-- amount + currency on ONE line --}}
+                                {{-- qty over the stepper; the line amount reads with the
+                                     unit price on the left instead --}}
                                 <div class="ci-total">
                                     @if ($cart_mode != 'expence')
                                         <div class="ci-qty">× <span
                                                 class="ci-qty-val">{{ $qtyFmt($item['qty']) }}</span>
                                             {{ $item['unit'] }}</div>
-                                    @endif
-
-                                    @if ($item['discount_percent'] != 0)
-                                        <del class="number-change">{{ $fmtLine($item['price'], $item['qty']) }}
-                                            {{ $this->currency_name }}</del>
-                                        <span
-                                            class="ci-total-amount number-change">{{ $fmtLine($item['discount_price'], $item['qty']) }}</span><span
-                                            class="ci-total-currency">{{ $this->currency_name }}</span>
-                                    @else
-                                        <span
-                                            class="ci-total-amount number-change">{{ $fmtLine($item['price'], $item['qty']) }}</span><span
-                                            class="ci-total-currency">{{ $this->currency_name }}</span>
                                     @endif
 
                                     @unless ($locked || $cart_mode == 'expence')
