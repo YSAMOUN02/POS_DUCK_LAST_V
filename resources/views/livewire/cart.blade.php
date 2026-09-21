@@ -1,6 +1,6 @@
 <div class="h-full flex flex-col min-h-0">
     <div class="screen-only h-full flex flex-col min-h-0">
-        <div class="flex-1 min-h-0 overflow-y-auto">
+        <div class="flex-1 min-h-0 overflow-y-auto cart-scroll">
         <div id="header_invoice"
             class="border-b bg-white border-default pb-2 p-2 flex items-center justify-between sticky top-0">
 
@@ -117,7 +117,9 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
             $locked = in_array($this->document_type, ['Deposit', 'Completed', 'Cancelled', 'Returned']);
         @endphp
 
-        <div class="flex flex-col gap-2.5 pt-2">
+        {{-- cart-body: grows to fill the scroll region so the summary block can be
+         pushed to its bottom. See .cart-scroll in the style block below. --}}
+    <div class="flex flex-col gap-2.5 pt-2 cart-body">
 
             {{-- ============================================================
      Cart Item List v2 — mobile-friendly fixes
@@ -223,6 +225,14 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                     line-height: 0;
                     color: var(--ci-danger);
                     font-size: 15px;
+                }
+
+                /* Armed: the next tap deletes. Green tick, slightly larger, so
+                   the change of state is obvious at a glance on a busy screen. */
+                .ci-remove.ci-remove-armed {
+                    color: #16a34a;
+                    transform: scale(1.25);
+                    transition: transform .12s ease, color .12s ease;
                 }
 
                 .ci-order-no {
@@ -642,6 +652,46 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                     border-top: 1px solid var(--ci-border);
                 }
 
+                /* The totals, currency, customer and warehouse block sits at the
+                   BOTTOM of the scroll region, directly above the action bar,
+                   instead of floating up under a short item list.
+
+                   margin-top:auto inside a flex column only consumes space that
+                   is actually free, so once the list is long enough to overflow
+                   the block returns to its natural place and scrolls with it. */
+                .cart-scroll {
+                    display: flex;
+                    flex-direction: column;
+                }
+
+                /* #total is three levels down, so every wrapper between it and
+                   the scroll box has to grow — an auto margin can only take
+                   space its own flex parent actually has. */
+                .cart-scroll > #header_invoice {
+                    flex-shrink: 0;
+                }
+
+                /* grow, never shrink (1 0, not 1 1): with a long list, a
+                   shrinkable item would be squashed below its content height and
+                   the rows would overlap instead of the region simply scrolling. */
+                .cart-body {
+                    flex: 1 0 auto;
+                    min-height: 0;
+                }
+
+                .cart-body > #cartLines {
+                    flex: 1 0 auto;
+                    min-height: 0;
+                }
+
+                /* margin-top:auto consumes only space that is actually free, so
+                   once the list is long enough to overflow, the summary returns
+                   to its natural place and scrolls with the items. */
+                #cartLines > #total {
+                    margin-top: auto;
+                    flex-shrink: 0;
+                }
+
             </style>
 
             @php
@@ -672,13 +722,18 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                                         @unless ($locked)
                                             <span
                                                 class="ci-chevron">▾</span>
-                                            {{-- Double-click, not single: a stray tap beside the qty
-                                                 field used to drop the line outright. The onclick only
-                                                 swallows the bubble, so one click neither removes the
-                                                 line nor toggles the row open. --}}
-                                            <button class="ci-remove" title="Double-click to remove"
-                                                onclick="event.stopPropagation()"
-                                                wire:dblclick.stop="removeItem({{ $item['id'] }})">
+                                            {{-- Two taps, not a double-click: the first arms the
+                                                 button and turns it into a green tick, the second
+                                                 removes the line. A double-click is easy to fire by
+                                                 accident and gives no chance to change your mind;
+                                                 this shows plainly that the next tap deletes.
+                                                 stopPropagation keeps the tap off the row toggle. --}}
+                                            <button class="ci-remove"
+                                                data-remove-id="{{ $item['id'] }}"
+                                                title="{{ __('Click to remove') }}"
+                                                data-title-idle="{{ __('Click to remove') }}"
+                                                data-title-armed="{{ __('Click again to confirm') }}"
+                                                onclick="armOrRemoveLine(event, this)">
                                                 <i class="fa-solid fa-delete-left fa-flip-horizontal"></i>
                                             </button>
                                         @endunless
@@ -780,7 +835,7 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                                         <div>
                                             <label class="ci-label">តម្លៃ · Price</label>
                                             <input type="number" min="0" step="0.000001"
-                                                wire:key="price-{{ $loop->index }}-{{ $this->cart[$loop->index]['price'] }}-{{ $this->factor }}-{{ $this->priceInputNonce }}"
+                                                wire:key="price-{{ $loop->index }}-{{ $this->cart[$loop->index]['price'] }}-{{ $this->factor }}-{{ $this->inputNonce['price.' . $loop->index] ?? 0 }}"
                                                 value="{{ $priceInput($item['price']) }}"
                                                 wire:change="recalcLine({{ $loop->index }}, 'price', $event.target.value)"
                                                 class="ci-input" />
@@ -789,7 +844,7 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                                         <div>
                                             <label class="ci-label">បញ្ចុះ · Disc %</label>
                                             <input type="number" min="0" max="100"
-                                                wire:key="discount-{{ $loop->index }}-{{ $this->cart[$loop->index]['discount_percent'] ?? 0 }}-{{ $this->priceInputNonce }}"
+                                                wire:key="discount-{{ $loop->index }}-{{ $this->cart[$loop->index]['discount_percent'] ?? 0 }}-{{ $this->inputNonce['discount_percent.' . $loop->index] ?? 0 }}"
                                                 value="{{ $item['discount_percent'] ?? 0 }}"
                                                 wire:change="recalcLine({{ $loop->index }}, 'discount_percent', $event.target.value)"
                                                 @disabled(!($item['allow_discount'] ?? true))
@@ -808,7 +863,7 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                                         <div>
                                             <label class="ci-label">តម្លៃ · Price</label>
                                             <input type="number" min="0" step="0.000001"
-                                                wire:key="price-{{ $loop->index }}-{{ $this->cart[$loop->index]['price'] }}-{{ $this->factor }}-{{ $this->priceInputNonce }}"
+                                                wire:key="price-{{ $loop->index }}-{{ $this->cart[$loop->index]['price'] }}-{{ $this->factor }}-{{ $this->inputNonce['price.' . $loop->index] ?? 0 }}"
                                                 value="{{ $priceInput($item['price']) }}"
                                                 wire:change="recalcLine({{ $loop->index }}, 'price', $event.target.value)"
                                                 class="ci-input" />

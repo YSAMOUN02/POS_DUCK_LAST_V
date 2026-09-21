@@ -819,16 +819,22 @@
             // respond() fires BEFORE the DOM morph, so Livewire never has to
             // reconcile a node the server did not send. fail() covers a commit
             // that errors out, where no morph happens.
-            Livewire.hook('commit', ({ respond, succeed, fail }) => {
+            Livewire.hook('commit', ({ respond, fail }) => {
                 respond(removePurchaseAddSkeletons);
                 fail(removePurchaseAddSkeletons);
-                // The server renders every panel closed now, so re-apply the open
-                // row after the morph — otherwise editing a qty snaps it shut.
-                // Same for a qty still being tapped, which the morph would reset.
-                succeed(() => {
-                    applyCartRowOpenState();
-                    applyPendingCartQty();
-                });
+                // NOTE: this deliberately does NOT use commit's succeed().
+                // Livewire defers the morph behind two nested queueMicrotask
+                // calls (supportMorphDom.js), while succeed() runs synchronously
+                // right after processEffects() — so anything restored there was
+                // wiped moments later by the morph that followed. That is why a
+                // row snapped shut on every price/qty/discount edit and tapped
+                // quantities were swallowed. 'morphed' fires synchronously at
+                // the end of the morph itself, which is genuinely "after".
+            });
+
+            Livewire.hook('morphed', () => {
+                applyCartRowOpenState();
+                applyPendingCartQty();
             });
         });
 

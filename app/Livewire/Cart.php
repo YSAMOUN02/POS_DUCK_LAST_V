@@ -45,7 +45,12 @@ class Cart extends Component
     public $currency_name = '$';
     public $factor = 1; // Conversion factor
     public $all_currency;
-    public $priceInputNonce = 0; // bumped on every recalcLine() call to force the price input to remount from server state
+    // Remount counters, keyed "<field>.<lineIndex>" — e.g. 'price.0'.
+    // Scoped per field AND per line on purpose: a single shared counter put a
+    // new wire:key on EVERY price and discount input in the cart, so one edit
+    // remounted them all and the field the user had just clicked into was
+    // destroyed under the cursor.
+    public $inputNonce = [];
 
 
 
@@ -1275,11 +1280,16 @@ class Cart extends Component
         $factor = (float) ($this->factor ?: 1);
         if (!isset($this->cart[$index])) return;
 
-        // Forces the price input's wire:key to change on every call (even a rejected
-        // one), so Livewire always remounts it from the server's own current value —
+        // Forces THIS field's wire:key to change on every call (even a rejected
+        // one), so Livewire remounts it from the server's own current value —
         // guarantees the field snaps back to the real price if an edit is denied,
         // instead of leaving whatever the user typed sitting in the input.
-        $this->priceInputNonce++;
+        //
+        // Only the edited field is bumped. Every other input keeps its key, so
+        // it morphs in place and holds focus: after changing a price you can
+        // click straight into the discount box without being thrown out of it.
+        $nonceKey = $field . '.' . $index;
+        $this->inputNonce[$nonceKey] = ($this->inputNonce[$nonceKey] ?? 0) + 1;
 
         $qty      = round((float) ($this->cart[$index]['qty'] ?? 0), 2);   // ← qty is 2 dp
         $discount = round((float) ($this->cart[$index]['discount_percent'] ?? 0), $precision);
@@ -1390,6 +1400,10 @@ class Cart extends Component
 
     }
 
+    // Attribute sits directly on removeItem: an #[On] with a blank line after it
+    // binds to whatever method comes next, which would wire the event to the
+    // wrong action entirely.
+    #[\Livewire\Attributes\On('remove-cart-item')]
     public function removeItem($id)
     {
         foreach ($this->cart as $index => $item) {

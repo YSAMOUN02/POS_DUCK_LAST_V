@@ -104,7 +104,11 @@
             </div>
         </div>
 
-        <div id="sidebar" class="flex flex-col max-h-full shrink-0 w-full lg:w-[380px]">
+        {{-- h-full, not just max-h-full: every h-full below this resolves against
+         a parent with a definite height, and without one the cart column was
+         only as tall as its contents — which left the action bar stranded in
+         the middle with empty space beneath it. --}}
+        <div id="sidebar" class="flex flex-col h-full max-h-full shrink-0 w-full lg:w-[380px]">
             <div id="inner-sidebar" class="sticky top-0 bg-slate-100 border-l border-default h-full">
                 {{-- overflow-hidden, not auto: the cart scrolls its own inner
                      region so the action bar can sit below it as a footer. --}}
@@ -1107,6 +1111,60 @@
             }, 400));
         }
 
+        /* ---------------------------------------------------------------
+         * Line removal: tap once to arm, tap again to confirm.
+         *
+         * Replaces the old double-click. A double-click fires by accident and
+         * offers no way back; this shows a green tick so it is obvious that the
+         * next tap deletes, and it disarms itself if the user walks away.
+         * ------------------------------------------------------------------ */
+        const REMOVE_ICON = '<i class="fa-solid fa-delete-left fa-flip-horizontal"></i>';
+        const REMOVE_ICON_ARMED = '<i class="fa-solid fa-check"></i>';
+        const REMOVE_ARM_MS = 3000;
+
+        let armedRemoveBtn = null;
+        let armedRemoveTimer = null;
+
+        function disarmLineRemove() {
+            clearTimeout(armedRemoveTimer);
+            if (!armedRemoveBtn) return;
+
+            // The morph may have swapped the node out from under us; writing to
+            // a detached element is harmless, so no isConnected guard is needed.
+            armedRemoveBtn.classList.remove('ci-remove-armed');
+            armedRemoveBtn.innerHTML = REMOVE_ICON;
+            armedRemoveBtn.title = armedRemoveBtn.dataset.titleIdle || '';
+            armedRemoveBtn = null;
+        }
+
+        function armOrRemoveLine(event, btn) {
+            // Without this the tap also toggles the row open/closed.
+            event.stopPropagation();
+
+            if (armedRemoveBtn === btn) {
+                const id = btn.dataset.removeId;
+                disarmLineRemove();
+                Livewire.dispatch('remove-cart-item', { id });
+                return;
+            }
+
+            // Only one row armed at a time, so a stray tap elsewhere cannot
+            // leave a second button primed to delete.
+            disarmLineRemove();
+
+            armedRemoveBtn = btn;
+            btn.classList.add('ci-remove-armed');
+            btn.innerHTML = REMOVE_ICON_ARMED;
+            btn.title = btn.dataset.titleArmed || '';
+
+            armedRemoveTimer = setTimeout(disarmLineRemove, REMOVE_ARM_MS);
+        }
+
+        // Tapping anywhere else backs out of the armed state.
+        document.addEventListener('click', (e) => {
+            if (armedRemoveBtn && !e.target.closest('.ci-remove')) disarmLineRemove();
+        });
+
         /** Keeps the user's number on screen until the server catches up. */
         function applyPendingCartQty() {
             if (!cartPendingQty.size) return;
@@ -1142,16 +1200,25 @@
             // reconcile a node the server did not send. fail() covers a commit
             // that errors out, where no morph happens and the placeholder would
             // otherwise sit there for good.
-            Livewire.hook('commit', ({ respond, succeed, fail }) => {
+            Livewire.hook('commit', ({ respond, fail }) => {
                 respond(removeCartAddSkeletons);
                 fail(removeCartAddSkeletons);
-                // The server renders every panel closed now, so re-apply the open
-                // row after the morph — otherwise editing a qty snaps it shut.
-                // Same for a qty still being tapped, which the morph would reset.
-                succeed(() => {
-                    applyCartRowOpenState();
-                    applyPendingCartQty();
-                });
+                // NOTE: this deliberately does NOT use commit's succeed().
+                // Livewire defers the morph behind two nested queueMicrotask
+                // calls (supportMorphDom.js), while succeed() runs synchronously
+                // right after processEffects() — so anything restored there was
+                // wiped moments later by the morph that followed. That is why a
+                // row snapped shut on every price/qty/discount edit and tapped
+                // quantities were swallowed. 'morphed' fires synchronously at
+                // the end of the morph itself, which is genuinely "after".
+            });
+
+            Livewire.hook('morphed', () => {
+                applyCartRowOpenState();
+                applyPendingCartQty();
+                // The morph rebuilds these buttons, so a half-armed one would be
+                // left showing a green tick that no longer does anything.
+                disarmLineRemove();
             });
         });
 
