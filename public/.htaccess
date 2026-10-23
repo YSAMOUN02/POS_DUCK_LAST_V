@@ -40,3 +40,16 @@
     ExpiresByType image/x-icon              "access plus 30 days"
     ExpiresByType font/woff2                "access plus 30 days"
 </IfModule>
+
+# Fallback for servers WITHOUT mod_expires. A stock XAMPP httpd.conf ships with
+# "#LoadModule expires_module" commented out, and the block above is then
+# skipped silently: no cache headers at all, every image downloaded again on
+# every page. mod_headers is loaded by default, so the same 30-day policy is
+# applied through it — and only when mod_expires is missing, never twice.
+<IfModule !mod_expires.c>
+    <IfModule mod_headers.c>
+        <FilesMatch "\.(css|js|png|jpe?g|gif|webp|ico|svg|woff2?)$">
+            Header set Cache-Control "public, max-age=2592000"
+        </FilesMatch>
+    </IfModule>
+</IfModule>

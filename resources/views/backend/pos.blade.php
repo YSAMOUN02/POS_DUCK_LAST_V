@@ -59,8 +59,12 @@
                 <ul class="tab-track flex items-center gap-1.5 overflow-x-auto px-2 py-2" id="category-tabs">
 
                     <li>
-                        <button data-category="topsale" class="tab-pill">
-                            Top Product
+                        {{-- "Recent" replaces "Top Product": most recently sold, in-stock
+                             first. data-category changed too, so a browser that saved
+                             the old 'topsale' tab simply falls back to this one, the
+                             first tab. --}}
+                        <button data-category="recent" class="tab-pill">
+                            <i class="fa-solid fa-clock-rotate-left pr-2 opacity-70"></i>{{ __('Recent') }}
                         </button>
                     </li>
 
@@ -219,7 +223,8 @@
 
         // Convert Blade categories JSON into JS object
         let productsByCategory = @json($categories);
-        let topProducts = @json($top_products ?? []);
+        // Server order is final: most recent sale first, in-stock ones on top.
+        let recentProducts = @json($recent_products ?? []);
 
         // Columns beyond the always-shown "Product" (name) column — the
         // cashier picks which of these they want via the Columns button,
@@ -283,6 +288,10 @@
                 const data = await res.json();
 
                 productsByCategory = data.categories;
+                // Recent is rebuilt server-side on every refresh — including the
+                // one fired right after a sale — so it never shows the stale
+                // stock the old page-load "Top Product" snapshot always did.
+                if (Array.isArray(data.recent)) recentProducts = data.recent;
 
                 const newFactor = Number(data.factor);
                 const rateChanged = newFactor !== Number(factor) || data.currency_name !== currency_name;
@@ -369,6 +378,35 @@
 
 
         // Helper: sort products by total_stock DESC
+        // Picker tiles show the small WebP thumbnail the server made
+        // (AppServicesProductImages) when there is one, the original upload
+        // otherwise. Originals run to 1.4 MB for a ~150px tile.
+        const PRODUCT_PLACEHOLDER = "/assets/defult/placeholder.png";
+
+        function productOriginalSrc(product) {
+            return product.image ? `/assets/startic_img/${encodeURIComponent(product.image)}` : "";
+        }
+
+        function productImageSrc(product) {
+            return product.thumb || productOriginalSrc(product) || PRODUCT_PLACEHOLDER;
+        }
+
+        // A thumbnail that has since gone missing falls back to the original
+        // ONCE, then to the placeholder: never a broken image, never a loop.
+        // data-original is only set when a thumbnail was used, so a missing
+        // original goes straight to the placeholder exactly as it used to.
+        function productImgFallback(img) {
+            const original = img.dataset.original;
+            if (original && !img.dataset.triedOriginal) {
+                img.dataset.triedOriginal = "1";
+                img.src = original;
+                return;
+            }
+            img.onerror = null;
+            img.src = PRODUCT_PLACEHOLDER;
+        }
+        window.productImgFallback = productImgFallback;
+
         function sortByStock(products) {
             return products.sort((a, b) => b.total_stock - a.total_stock);
         }
@@ -391,7 +429,7 @@
                 localStorage.setItem(TAB_KEY, category);
             });
         });
-        // Restore user's last tab (fall back to first tab = Top Product)
+        // Restore user's last tab (fall back to first tab = Recent)
         (function restoreActiveTab() {
             if (!tabs.length) return;
             const saved = localStorage.getItem(TAB_KEY);
@@ -417,8 +455,11 @@
                let products = [];
                     if (category === 'top') {
                         products = sortByStock(Object.values(productsByCategory).flat()).slice(0, 30);
-                    } else if (category === 'topsale') {
-                        products = topProducts;                         // keep server sales order — no re-sort
+                    } else if (category === 'recent') {
+                        // No re-sort here: the server already put in-stock first
+                        // and kept recency within each group. sortByStock() would
+                        // re-rank by unit count and lose that order.
+                        products = recentProducts;
                     } else {
                         products = sortByStock(productsByCategory[category] || []);
                     }
@@ -450,9 +491,7 @@
                     '<div class="min_heigh_70 w-full  product-grid p-3  bg-[#F6F5FF] mb-12 pb-16">';
 
                 products.forEach((product, index) => {
-                    const imageSrc = product.image ?
-                        `/assets/startic_img/${encodeURIComponent(product.image)}` :
-                        '/assets/defult/placeholder.png';
+                    const imageSrc = productImageSrc(product);
 
                     const price = Number(product.sell_price || 0);
                     const finalPrice = price;
@@ -482,7 +521,7 @@
                             <div class="relative w-full">
                                 <img id="product-image${product.id}" class="object-cover w-full" loading="lazy"
                                     style="max-height:150px;min-height:150px;"
-                                    src="${imageSrc}" onerror="this.onerror=null;this.src='/assets/defult/placeholder.png'"
+                                    src="${imageSrc}" data-original="${product.thumb ? productOriginalSrc(product) : ''}" onerror="productImgFallback(this)" decoding="async"
                                     alt="${escAttr(product.name)}" />
 
                                 <div class="info-wrap"
@@ -561,9 +600,7 @@
         // a table row: thumbnail+name (always shown) plus whichever optional
         // columns the cashier picked via the Columns button.
         function renderProductRow(product) {
-            const imageSrc = product.image ?
-                `/assets/startic_img/${encodeURIComponent(product.image)}` :
-                '/assets/defult/placeholder.png';
+            const imageSrc = productImageSrc(product);
 
             const price = Number(product.sell_price || 0);
             const finalPrice = price;
@@ -609,7 +646,7 @@
                     <td class="px-3 py-2">
                         <div class="flex items-center gap-2">
                             <img class="w-10 h-10 rounded object-cover shrink-0" loading="lazy"
-                                src="${imageSrc}" onerror="this.onerror=null;this.src='/assets/defult/placeholder.png'" alt="${escAttr(product.name)}">
+                                src="${imageSrc}" data-original="${product.thumb ? productOriginalSrc(product) : ''}" onerror="productImgFallback(this)" decoding="async" alt="${escAttr(product.name)}">
                             <span class="font-medium text-gray-800">${escAttr(product.name)}</span>
                             ${discountPercent != 0 ? `<span class="inline-flex items-center bg-red-500 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-sm shrink-0"><i class="fa-solid fa-tag mr-0.5"></i>${discountPercent}%</span>` : ''}
                         </div>
@@ -841,9 +878,7 @@
 
         function renderProductCard(product) {
 
-            const imageSrc = product.image ?
-                `/assets/startic_img/${encodeURIComponent(product.image)}` :
-                '/assets/defult/placeholder.png';
+            const imageSrc = productImageSrc(product);
 
             const price = Number(product.sell_price || 0);
             const vatRate = Number(product.vat || 0);
@@ -877,7 +912,7 @@
                                     <!-- IMAGE -->
                                     <div class="relative w-full">
                                         <img id="product-image${product.id}" class="object-cover w-full" loading="lazy" style="max-height:150px;min-height:150px;"
-                                            src="${imageSrc}" onerror="this.onerror=null;this.src='/assets/defult/placeholder.png'" alt="${product.name}" />
+                                            src="${imageSrc}" data-original="${product.thumb ? productOriginalSrc(product) : ''}" onerror="productImgFallback(this)" decoding="async" alt="${product.name}" />
 
                                         <div class="info-wrap"
                                             data-name="${(product.name || '').replace(/"/g, '&quot;')}"
@@ -1165,6 +1200,83 @@
             if (armedRemoveBtn && !e.target.closest('.ci-remove')) disarmLineRemove();
         });
 
+        /* ---------------------------------------------------------------
+         * Press and hold a stepper to keep counting.
+         *
+         * Pointer events, not click: a click only lands on release, so a hold
+         * had to be tapped out one press at a time. The first step fires on
+         * press, then repeats after a short pause and speeds up, the way a
+         * keyboard repeat does — slow enough to stop on an exact number, fast
+         * enough to cross a big quantity.
+         *
+         * stepCartQty() still owns the clamping and the debounced commit, so
+         * holding sends ONE request when the user lets go, not one per step.
+         * ------------------------------------------------------------------ */
+        const STEP_HOLD_DELAY = 400;   // pause before a hold starts repeating
+        const STEP_REPEAT_MS = 120;    // starting cadence
+        const STEP_REPEAT_MIN = 45;    // fastest it is allowed to get
+
+        let stepHoldTimer = null;
+        let stepHoldBtn = null;
+
+        function stopStepHold() {
+            clearTimeout(stepHoldTimer);
+            stepHoldTimer = null;
+            stepHoldBtn = null;
+        }
+
+        function beginStepHold(btn, delta) {
+            stepHoldBtn = btn;
+            let wait = STEP_REPEAT_MS;
+
+            const tick = () => {
+                // The morph can replace the button mid-hold; without this the
+                // stepper would keep counting a row that is no longer there.
+                if (stepHoldBtn !== btn || !btn.isConnected) return stopStepHold();
+
+                stepCartQty(btn, delta);
+                wait = Math.max(STEP_REPEAT_MIN, wait - 12);
+                stepHoldTimer = setTimeout(tick, wait);
+            };
+
+            stepHoldTimer = setTimeout(tick, STEP_HOLD_DELAY);
+        }
+
+        document.addEventListener('pointerdown', (e) => {
+            const btn = e.target.closest?.('.ci-step');
+            if (!btn) return;
+
+            // Keeps a hold from selecting the +/- glyph as text.
+            e.preventDefault();
+            e.stopPropagation();
+
+            const delta = Number(btn.dataset.step || 0);
+            if (!delta) return;
+
+            stepCartQty(btn, delta);
+            beginStepHold(btn, delta);
+        });
+
+        ['pointerup', 'pointercancel', 'pointerleave', 'blur'].forEach((evt) => {
+            window.addEventListener(evt, stopStepHold);
+        });
+
+        // Releasing outside the button, or switching tab mid-hold, must also stop it.
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) stopStepHold();
+        });
+
+        // The buttons are no longer wired with onclick, so keyboard users get
+        // their single step here.
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            const btn = e.target.closest?.('.ci-step');
+            if (!btn) return;
+            e.preventDefault();
+            const delta = Number(btn.dataset.step || 0);
+            if (delta) stepCartQty(btn, delta);
+        });
+
         /** Keeps the user's number on screen until the server catches up. */
         function applyPendingCartQty() {
             if (!cartPendingQty.size) return;
@@ -1182,6 +1294,28 @@
                     valEl.textContent = want;
                 }
             });
+        }
+
+
+        /* Clear-cart confirmation. clearCart() is an #[On('clearCart')] listener
+           on the cart component, so the browser can reach it by event. */
+        function openClearCartConfirm() {
+            const m = document.getElementById('clearCartConfirmModal');
+            if (!m) return;
+            m.classList.remove('hidden');
+            m.classList.add('flex');
+        }
+
+        function closeClearCartConfirm() {
+            const m = document.getElementById('clearCartConfirmModal');
+            if (!m) return;
+            m.classList.add('hidden');
+            m.classList.remove('flex');
+        }
+
+        function confirmClearCart() {
+            closeClearCartConfirm();
+            Livewire.dispatch('clearCart');
         }
 
         function removeCartAddSkeletons() {
@@ -3322,11 +3456,26 @@
         </div>
     </div>
     {{-- <UPDATE PRODUCT> --}}
-    <div id="confirm-update-product"
-        class="hight_index fixed inset-0 hidden flex items-start md:items-center justify-center backdrop-blur-sm bg-black/50 overflow-y-auto p-4">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col my-8">
+    {{-- Standard sale form modal. hight_index stays: this opens on top of the
+         product list, and style.css (loaded after app.css) keeps its z-index
+         ahead of the overlay class's own. --}}
+    <div id="confirm-update-product" class="modal-overlay-sale-top hight_index hidden">
+        <div class="w-full max-w-5xl max-h-[90vh] modal-card-sale">
 
-            <h2 class="text-2xl font-bold pt-6 text-gray-800 text-center shrink-0">Update Product</h2>
+            <div class="modal-header-sale">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="modal-icon-badge-sale">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h2 class="text-lg font-bold text-white">{{ __('Update Product') }}</h2>
+                        <p class="text-sm text-slate-300">{{ __('Edit details, pricing and stock settings') }}</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeUpdateProductModal()" class="modal-close-btn">
+                    &times;
+                </button>
+            </div>
 
             <form id="updateProductForm"
                 class="grid gap-3 grid-cols-4 text-left overflow-y-auto flex-1 px-6 py-4">
@@ -3481,14 +3630,15 @@
                 </div>
             </form>
 
-            <div class="flex justify-center space-x-4 px-6 py-4 border-t border-gray-200 shrink-0">
-                <button type="button" onclick="confirmUpdateProduct()"
-                    class="px-5 py-2 bg-sky-500 text-white rounded-xl">
-                    Update
-                </button>
+            {{-- Standard form footer: Cancel left, primary action right. --}}
+            <div class="flex justify-end gap-3 bg-gray-50 px-6 py-4 border-t border-gray-200 shrink-0">
                 <button type="button" onclick="closeUpdateProductModal()"
-                    class="px-5 py-2 bg-gray-200 rounded-xl">
-                    Cancel
+                    class="px-5 py-2.5 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-100 transition font-semibold">
+                    {{ __('Cancel') }}
+                </button>
+                <button type="button" onclick="confirmUpdateProduct()"
+                    class="px-5 py-2.5 rounded-xl bg-sky-500 hover:bg-sky-600 text-white font-semibold shadow-md transition">
+                    {{ __('Update') }}
                 </button>
             </div>
         </div>
@@ -3527,6 +3677,24 @@
 
                         <input type="text" id="document_search_invoice" placeholder="Document No" autocomplete="off"
                             class="min-w-[130px] px-3 py-1.5 bg-white border border-slate-300 text-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-400 outline-none">
+
+                        {{-- Date presets fill the two date boxes below and reload.
+                             Editing a date by hand flips this back to "Date range".
+                             Classes reused from the neighbouring inputs, so they are
+                             already in the built Tailwind CSS. --}}
+                        <select id="sale_date_preset"
+                            class="min-w-[130px] px-3 py-1.5 bg-white border border-slate-300 text-sm focus:ring-2 focus:ring-cyan-300 focus:border-cyan-400 outline-none">
+                            <option value="">📅 {{ __('Date range') }}</option>
+                            <option value="today">{{ __('Today') }}</option>
+                            <option value="yesterday">{{ __('Yesterday') }}</option>
+                            <option value="this_week">{{ __('This week') }}</option>
+                            <option value="last_week">{{ __('Last week') }}</option>
+                            <option value="this_month">{{ __('This month') }}</option>
+                            <option value="last_month">{{ __('Last month') }}</option>
+                            <option value="last_6_months">{{ __('Last 6 months') }}</option>
+                            <option value="this_year">{{ __('This year') }}</option>
+                            <option value="last_year">{{ __('Last year') }}</option>
+                        </select>
 
                         <input type="date" id="from_date"
                             class="px-3 py-1.5 bg-white border border-slate-300 text-sm focus:ring-2 focus:ring-cyan-300 focus:border-cyan-400 outline-none">
@@ -3633,7 +3801,13 @@
                     class="shrink-0 px-3 py-2 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
 
                     <div class="flex items-center gap-2">
+                        {{-- data-* labels: downloadSales() swaps the button text while it
+                             works, and Blade is where the translations live. --}}
                         <button type="button" id="downloadSales" onclick="downloadSales()"
+                            data-loading-label="{{ __('Exporting…') }}"
+                            data-error-label="{{ __('Export failed. Please try again.') }}"
+                            data-forbidden-label="{{ __('You do not have permission to export.') }}"
+                            data-expired-label="{{ __('Your session has expired. Reload the page and try again.') }}"
                             class="px-3 py-1.5 bg-emerald-500 hover:bg-emerald-600 text-white shadow-sm transition text-sm font-semibold">
                             <i class="fa-regular fa-file-excel mr-1"></i>
                             Excel
@@ -4177,16 +4351,26 @@
     @endif
 
 
-    <div id="lotModal" class="modal-overlay-alert hidden">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-6xl p-4 animate-scaleUp">
-            <!-- Header / Close -->
-            <div class="flex justify-end mb-4">
-                <button onclick="closeLotModal()"
-                    class="text-gray-400 hover:text-gray-700 text-2xl font-bold">&times;</button>
+    {{-- Standard sale form modal: header with icon + close, body, footer.
+         Every id the script reads (item-id, lot-auto-pick, lot-auto-qty,
+         lotModalBody, lot-warning, save-lot-btn) is unchanged. --}}
+    <div id="lotModal" class="modal-overlay-sale hidden">
+        <div class="w-full max-w-6xl modal-card-sale animate-scaleUp">
+            <div class="modal-header-sale">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="modal-icon-badge-sale">
+                        <i class="fa-solid fa-boxes-stacked"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h2 class="text-lg font-bold text-white">{{ __('Select Lot / Bin') }}</h2>
+                        <p class="text-sm text-slate-300">{{ __('Choose which lots and bins this line is sold from') }}</p>
+                    </div>
+                </div>
+                <button type="button" onclick="closeLotModal()" class="modal-close-btn">&times;</button>
             </div>
 
             <!-- Main content: image + info + lots -->
-            <div class="flex gap-4">
+            <div class="flex gap-4 p-6">
                 <!-- Product Image -->
                 <div class="flex-shrink-0">
                     <img id="display_img" src="" alt="Product Image"
@@ -4217,15 +4401,25 @@
                         <!-- JS will inject lots rows here -->
                     </div>
 
-                    <!-- Footer: warning + save -->
-                    &ensp;
-                    <div class="flex justify-between items-center mt-4 ">
-                        <button id="save-lot-btn" onclick="saveLots()"
-                            class="px-5 py-2 rounded-xl transition bg-gray-400" disabled>
-                            Save
-                        </button>
-                        <p id="lot-warning" class="text-red-500 hidden text-sm"></p>
-                    </div>
+                </div>
+            </div>
+
+            {{-- Standard footer. save-lot-btn keeps bg-gray-400: the script swaps
+                 it for bg-emerald-500 once the lot quantities add up. --}}
+            {{-- justify-end + flex-1, not ml-auto: margin utilities are
+                 overridden by style.css's universal reset, so ml-auto left the
+                 buttons stranded on the left whenever the warning was hidden. --}}
+            <div class="flex justify-end items-center gap-3 bg-gray-50 px-6 py-4 border-t border-gray-200">
+                <p id="lot-warning" class="flex-1 text-red-500 hidden text-sm"></p>
+                <div class="flex gap-3">
+                    <button type="button" onclick="closeLotModal()"
+                        class="px-5 py-2.5 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-100 transition font-semibold">
+                        {{ __('Cancel') }}
+                    </button>
+                    <button id="save-lot-btn" onclick="saveLots()"
+                        class="px-5 py-2.5 rounded-xl transition bg-gray-400 text-white font-semibold" disabled>
+                        {{ __('Save') }}
+                    </button>
                 </div>
             </div>
         </div>
@@ -4233,40 +4427,45 @@
 
 
 
-    <div id="viewLotModal"
-        class="modal-overlay-alert hidden">
-        <div class="bg-white rounded-2xl shadow-2xl w-4xl max-w-5xl p-6 animate-scaleUp">
-
-            <!-- Header: Image left, Title right -->
-            <div class="flex items-start mb-4 gap-4">
-                <!-- Product Image -->
-                <div class="flex-shrink-0">
-                    <img id="display_img2" src="" alt="Product Image"
-                        class="w-32 h-32 object-cover rounded-lg border shadow">
+    {{-- Standard sale form modal. Ids the script fills (display_img2,
+         view-lot-title, view-lot-info, viewLotModalBody) are unchanged. --}}
+    <div id="viewLotModal" class="modal-overlay-sale hidden">
+        <div class="w-full max-w-5xl modal-card-sale animate-scaleUp">
+            <div class="modal-header-sale">
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="modal-icon-badge-sale">
+                        <i class="fa-solid fa-layer-group"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h2 class="text-lg font-bold text-white">{{ __('Lots & Bins') }}</h2>
+                        <p class="text-sm text-slate-300">{{ __('Stock on hand by lot and bin') }}</p>
+                    </div>
                 </div>
-
-                <!-- Title & Info -->
-                <div class="flex-1">
-                    <h2 id="view-lot-title" class="text-xl font-bold text-gray-800 mb-2">Loading...</h2>
-                    <p id="view-lot-info" class="text-gray-600 text-sm">
-                        <!-- Optional: show product ID, stock, or other info -->
-                    </p>
-                </div>
-
-                <!-- Close button -->
-                <button onclick="closeViewLotModal()"
-                    class="text-gray-400 hover:text-gray-700 text-2xl">&times;</button>
+                <button type="button" onclick="closeViewLotModal()" class="modal-close-btn">&times;</button>
             </div>
 
-            <!-- Table Body -->
-            <div id="viewLotModalBody" class=" overflow-y-auto max-h-72 space-y-2">
-                <!-- JS injects rows here -->
+            <div class="p-6">
+                <div class="flex items-start mb-4 gap-4">
+                    <div class="flex-shrink-0">
+                        <img id="display_img2" src="" alt="Product Image"
+                            class="w-32 h-32 object-cover rounded-lg border shadow">
+                    </div>
+                    <div class="flex-1">
+                        <h2 id="view-lot-title" class="text-xl font-bold text-gray-800 mb-2">Loading...</h2>
+                        <p id="view-lot-info" class="text-gray-600 text-sm"></p>
+                    </div>
+                </div>
+
+                <div id="viewLotModalBody" class="overflow-y-auto max-h-72 space-y-2">
+                    <!-- JS injects rows here -->
+                </div>
             </div>
 
-            <!-- Footer -->
-            <div class="flex justify-end mt-4">
-                <button onclick="closeViewLotModal()"
-                    class="px-5 py-2 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition">Close</button>
+            <div class="flex justify-end gap-3 bg-gray-50 px-6 py-4 border-t border-gray-200">
+                <button type="button" onclick="closeViewLotModal()"
+                    class="px-5 py-2.5 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-100 transition font-semibold">
+                    {{ __('Close') }}
+                </button>
             </div>
         </div>
     </div>
@@ -4482,25 +4681,25 @@
 
             <div class="modal-card-sale h-full">
 
-                <!-- Modal header -->
-                <div class="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 px-3 py-2 shrink-0">
-                    <div class="flex items-center justify-between gap-3">
-                        <h3 class="text-sm font-bold text-white whitespace-nowrap">
-                            របាយការណ៍ ទំនិញ ចេញចូល <span class="font-normal text-sky-200">· Item ledger entry</span>
-                        </h3>
-                        <button type="button"
-                            class="modal-close-btn shrink-0"
-                            data-modal-hide="default-modal-ledger-entry-list">
-                            <svg class="w-5 h-5" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"
-                                width="24" height="24" fill="none" viewBox="0 0 24 24">
-                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"
-                                    stroke-width="2" d="M6 18 17.94 6M18 18 6.06 6" />
-                            </svg>
-                            <span class="sr-only">Close modal</span>
-                        </button>
-                    </div>
+                {{-- Standard header, identical in shape to the Sale Report's: the
+                     title row is modal-header-sale, and the filters sit in the
+                     light bar beneath it instead of inside the dark header. --}}
+                <div class="modal-header-sale !py-2">
+                    <h3 class="text-sm font-bold text-white flex items-center gap-2 whitespace-nowrap">
+                        <i class="fa-solid fa-boxes-stacked text-sky-300"></i>
+                        របាយការណ៍ ទំនិញ ចេញចូល
+                        <span class="font-normal text-slate-300">· Item ledger entry</span>
+                    </h3>
+                    <button type="button" class="modal-close-btn shrink-0"
+                        data-modal-hide="default-modal-ledger-entry-list">
+                        <i class="fa-solid fa-xmark text-lg"></i>
+                        <span class="sr-only">Close modal</span>
+                    </button>
+                </div>
 
-                    <div class="mt-2 flex flex-wrap gap-2 items-center">
+                {{-- Filters --}}
+                <div class="shrink-0 bg-slate-50 border-b border-slate-200 px-3 py-2">
+                    <div class="flex flex-wrap gap-2 items-center">
 
                         <!-- Global -->
                         <input type="text" id="filter_global"
@@ -5903,6 +6102,8 @@
                         </h2>
                         <p class="text-sm text-slate-300">Enter return information</p>
                     </div>
+                    {{-- Close button like every other form modal header. --}}
+                    <button type="button" onclick="closeSaleReturnModal()" class="modal-close-btn">&times;</button>
                 </div>
 
                 <!-- Body -->
@@ -6013,4 +6214,32 @@
         <span id="tableCopyMsgMany" class="hidden">{{ __('Copied :n rows') }}</span>
         <span id="tableCopyMsgFail" class="hidden">{{ __('Could not copy to clipboard') }}</span>
     </div>
+
+    {{-- Clear-cart confirmation. Replaces the double-click guard: a double-click
+         is invisible (nothing tells you it is required), easy to fire by accident
+         and easy to miss on a touch screen. A modal says plainly what is about to
+         happen and gives a way out. --}}
+    {{-- Standard confirm template (same as confirmModal / printConfirmModal):
+         alert overlay + alert card, centred icon chip, title, message, centred
+         Cancel + action. z-[100] keeps it above any form modal underneath. --}}
+    <div id="clearCartConfirmModal" class="modal-overlay-alert z-[100] hidden">
+        <div class="modal-card-alert text-center animate-scaleUp">
+            <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-100 text-red-600">
+                <i class="fa-solid fa-trash-can text-2xl"></i>
+            </div>
+            <h2 class="text-2xl font-bold mb-3 text-gray-800">{{ __('Clear the cart?') }}</h2>
+            <p class="text-gray-600 mb-6">{{ __('Every line will be removed. This cannot be undone.') }}</p>
+            <div class="flex justify-center space-x-4">
+                <button type="button" onclick="closeClearCartConfirm()"
+                    class="px-5 py-2 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition">
+                    {{ __('Cancel') }}
+                </button>
+                <button type="button" onclick="confirmClearCart()"
+                    class="px-5 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 transition inline-flex items-center gap-2">
+                    <i class="fa-solid fa-trash-can"></i> {{ __('Clear cart') }}
+                </button>
+            </div>
+        </div>
+    </div>
+
 @endpush

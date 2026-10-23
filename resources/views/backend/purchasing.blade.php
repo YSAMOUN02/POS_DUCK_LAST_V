@@ -106,8 +106,12 @@
 
 
                     <li>
-                        <button data-category="topsale" class="tab-pill">
-                            Top Product
+                        {{-- "Recent" replaces "Top Product": most recently sold, in-stock
+                             first. data-category changed too, so a browser that saved
+                             the old 'topsale' tab simply falls back to this one, the
+                             first tab. --}}
+                        <button data-category="recent" class="tab-pill">
+                            <i class="fa-solid fa-clock-rotate-left pr-2 opacity-70"></i>{{ __('Recent') }}
                         </button>
                     </li>
 
@@ -284,8 +288,38 @@
         // Convert Blade categories JSON into JS object
         const productsByCategory = @json($categories);
 
-        let topProducts = @json($top_products ?? []);
+        // Server order is final: most recent sale first, in-stock ones on top.
+        let recentProducts = @json($recent_products ?? []);
         // Helper: sort products by total_stock DESC
+        // Picker tiles show the small WebP thumbnail the server made
+        // (AppServicesProductImages) when there is one, the original upload
+        // otherwise. Originals run to 1.4 MB for a ~150px tile.
+        const PRODUCT_PLACEHOLDER = "/assets/defult/placeholder.png";
+
+        function productOriginalSrc(product) {
+            return product.image ? `/assets/startic_img/${encodeURIComponent(product.image)}` : "";
+        }
+
+        function productImageSrc(product) {
+            return product.thumb || productOriginalSrc(product) || PRODUCT_PLACEHOLDER;
+        }
+
+        // A thumbnail that has since gone missing falls back to the original
+        // ONCE, then to the placeholder: never a broken image, never a loop.
+        // data-original is only set when a thumbnail was used, so a missing
+        // original goes straight to the placeholder exactly as it used to.
+        function productImgFallback(img) {
+            const original = img.dataset.original;
+            if (original && !img.dataset.triedOriginal) {
+                img.dataset.triedOriginal = "1";
+                img.src = original;
+                return;
+            }
+            img.onerror = null;
+            img.src = PRODUCT_PLACEHOLDER;
+        }
+        window.productImgFallback = productImgFallback;
+
         function sortByStock(products) {
             return products.sort((a, b) => b.total_stock - a.total_stock);
         }
@@ -305,7 +339,7 @@
                 localStorage.setItem(TAB_KEY, category);
             });
         });
-        // Restore user's last tab (fall back to first tab = Top Product)
+        // Restore user's last tab (fall back to first tab = Recent)
         (function restoreActiveTab() {
             if (!tabs.length) return;
             const saved = localStorage.getItem(TAB_KEY);
@@ -327,8 +361,11 @@
                 let products = [];
                if (category === 'top') {
                         products = sortByStock(Object.values(productsByCategory).flat()).slice(0, 30);
-                    } else if (category === 'topsale') {
-                        products = topProducts;                         // keep server sales order — no re-sort
+                    } else if (category === 'recent') {
+                        // No re-sort here: the server already put in-stock first
+                        // and kept recency within each group. sortByStock() would
+                        // re-rank by unit count and lose that order.
+                        products = recentProducts;
                     } else {
                         products = sortByStock(productsByCategory[category] || []);
                     }
@@ -337,9 +374,7 @@
                     '<div class="min_heigh_70 w-full product-grid p-3 bg-[#F6F5FF] mb-12 pb-16">';
 
                 products.forEach(product => {
-                    const imageSrc = product.image ?
-                        `/assets/startic_img/${encodeURIComponent(product.image)}` :
-                        '/assets/defult/placeholder.png';
+                    const imageSrc = productImageSrc(product);
 
                     // Stock color logic using percentage
                     let stockColor = 'text-gray-400'; // default out of stock
@@ -367,7 +402,7 @@
                                     <!-- IMAGE -->
                                     <div class="relative w-full">
                                         <img id="product-image${product.id}" class="object-cover w-full" loading="lazy" style="max-height:150px;min-height:150px;"
-                                            src="${imageSrc}" onerror="this.onerror=null;this.src='/assets/defult/placeholder.png'" alt="${product.name}" />
+                                            src="${imageSrc}" data-original="${product.thumb ? productOriginalSrc(product) : ''}" onerror="productImgFallback(this)" decoding="async" alt="${product.name}" />
                                         <i class="info fa-solid fa-circle-info absolute top-1 right-1 text-blue-500 text-sm"></i>
                                         ${product.discount_percent != 0 ? `
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 <span class="absolute top-1 left-1 inline-flex items-center bg-red-500 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-sm shadow-md">
@@ -565,9 +600,7 @@
 
         function renderProductCard(product) {
 
-            const imageSrc = product.image ?
-                `/assets/startic_img/${encodeURIComponent(product.image)}` :
-                '/assets/defult/placeholder.png';
+            const imageSrc = productImageSrc(product);
 
 
 
@@ -597,7 +630,7 @@
                                       <!-- IMAGE -->
                                     <div class="relative w-full">
                                         <img id="product-image${product.id}" class="object-cover w-full" loading="lazy" style="max-height:150px;min-height:150px;"
-                                            src="${imageSrc}" onerror="this.onerror=null;this.src='/assets/defult/placeholder.png'" alt="${product.name}" />
+                                            src="${imageSrc}" data-original="${product.thumb ? productOriginalSrc(product) : ''}" onerror="productImgFallback(this)" decoding="async" alt="${product.name}" />
                                         <i class="info fa-solid fa-circle-info absolute top-1 right-1 text-blue-500 text-sm"></i>
                                         ${product.discount_percent != 0 ? `
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 <span class="absolute top-1 left-1 inline-flex items-center bg-red-500 text-white text-[10px] font-semibold px-1.5 py-0.5 rounded-sm shadow-md">
@@ -760,6 +793,83 @@
             }, 400));
         }
 
+        /* ---------------------------------------------------------------
+         * Press and hold a stepper to keep counting.
+         *
+         * Pointer events, not click: a click only lands on release, so a hold
+         * had to be tapped out one press at a time. The first step fires on
+         * press, then repeats after a short pause and speeds up, the way a
+         * keyboard repeat does — slow enough to stop on an exact number, fast
+         * enough to cross a big quantity.
+         *
+         * stepCartQty() still owns the clamping and the debounced commit, so
+         * holding sends ONE request when the user lets go, not one per step.
+         * ------------------------------------------------------------------ */
+        const STEP_HOLD_DELAY = 400;   // pause before a hold starts repeating
+        const STEP_REPEAT_MS = 120;    // starting cadence
+        const STEP_REPEAT_MIN = 45;    // fastest it is allowed to get
+
+        let stepHoldTimer = null;
+        let stepHoldBtn = null;
+
+        function stopStepHold() {
+            clearTimeout(stepHoldTimer);
+            stepHoldTimer = null;
+            stepHoldBtn = null;
+        }
+
+        function beginStepHold(btn, delta) {
+            stepHoldBtn = btn;
+            let wait = STEP_REPEAT_MS;
+
+            const tick = () => {
+                // The morph can replace the button mid-hold; without this the
+                // stepper would keep counting a row that is no longer there.
+                if (stepHoldBtn !== btn || !btn.isConnected) return stopStepHold();
+
+                stepCartQty(btn, delta);
+                wait = Math.max(STEP_REPEAT_MIN, wait - 12);
+                stepHoldTimer = setTimeout(tick, wait);
+            };
+
+            stepHoldTimer = setTimeout(tick, STEP_HOLD_DELAY);
+        }
+
+        document.addEventListener('pointerdown', (e) => {
+            const btn = e.target.closest?.('.ci-step');
+            if (!btn) return;
+
+            // Keeps a hold from selecting the +/- glyph as text.
+            e.preventDefault();
+            e.stopPropagation();
+
+            const delta = Number(btn.dataset.step || 0);
+            if (!delta) return;
+
+            stepCartQty(btn, delta);
+            beginStepHold(btn, delta);
+        });
+
+        ['pointerup', 'pointercancel', 'pointerleave', 'blur'].forEach((evt) => {
+            window.addEventListener(evt, stopStepHold);
+        });
+
+        // Releasing outside the button, or switching tab mid-hold, must also stop it.
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden) stopStepHold();
+        });
+
+        // The buttons are no longer wired with onclick, so keyboard users get
+        // their single step here.
+        document.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' && e.key !== ' ') return;
+            const btn = e.target.closest?.('.ci-step');
+            if (!btn) return;
+            e.preventDefault();
+            const delta = Number(btn.dataset.step || 0);
+            if (delta) stepCartQty(btn, delta);
+        });
+
         /** Keeps the user's number on screen until the server catches up. */
         function applyPendingCartQty() {
             if (!cartPendingQty.size) return;
@@ -777,6 +887,28 @@
                     valEl.textContent = want;
                 }
             });
+        }
+
+
+        /* Clear-cart confirmation. clearCart() is an #[On('clearCart')] listener
+           on the cart component, so the browser can reach it by event. */
+        function openClearCartConfirm() {
+            const m = document.getElementById('clearCartConfirmModal');
+            if (!m) return;
+            m.classList.remove('hidden');
+            m.classList.add('flex');
+        }
+
+        function closeClearCartConfirm() {
+            const m = document.getElementById('clearCartConfirmModal');
+            if (!m) return;
+            m.classList.add('hidden');
+            m.classList.remove('flex');
+        }
+
+        function confirmClearCart() {
+            closeClearCartConfirm();
+            Livewire.dispatch('clearCart');
         }
 
         function removePurchaseAddSkeletons() {
@@ -2029,51 +2161,53 @@
          since received stock must land somewhere — while a missing vendor is
          usually a slip but is allowed. So the warehouse blocks and the vendor
          only asks. Stacked above the preview it is launched from. --}}
-    <div id="purchasePreflightModal" class="modal-overlay-sale-stacked hidden">
-        <div class="w-full max-w-md modal-card-sale animate-scaleUp">
-            <div class="flex items-start gap-3 p-6">
-                <div id="preflight-icon"
-                    class="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-600">
-                    <i class="fa-solid fa-triangle-exclamation text-lg"></i>
-                </div>
-                {{-- Both wordings are rendered here rather than written from JS,
-                     so every string still goes through __() and stays translated. --}}
-                <div class="min-w-0">
-                    <h3 class="text-lg font-bold text-gray-800">
-                        <span id="preflight-title-block" class="hidden">{{ __('Cannot post this purchase') }}</span>
-                        <span id="preflight-title-warn" class="hidden">{{ __('Check before posting') }}</span>
-                    </h3>
-
-                    <ul class="mt-2 space-y-1.5 text-sm">
-                        <li id="preflight-warehouse" class="hidden items-start gap-2 text-rose-600">
-                            <i class="fa-solid fa-circle-xmark mt-0.5"></i>
-                            <span>{{ __('Warehouse not selected — required to receive stock.') }}</span>
-                        </li>
-                        <li id="preflight-vendor" class="hidden items-start gap-2 text-amber-600">
-                            <i class="fa-solid fa-circle-exclamation mt-0.5"></i>
-                            <span>{{ __('Vendor not selected — the purchase will be recorded without one.') }}</span>
-                        </li>
-                    </ul>
-
-                    <p class="mt-3 text-sm text-gray-600">
-                        <span id="preflight-hint-block" class="hidden">
-                            {{ __('Close this and choose a warehouse to receive the stock into.') }}
-                        </span>
-                        <span id="preflight-hint-warn" class="hidden">{{ __('Continue anyway?') }}</span>
-                    </p>
-                </div>
+    {{-- Standard confirm template (alert overlay + alert card), as every other
+         confirm in the app. z-[100] so it sits over the purchase preview it is
+         opened from. Elements showPurchasePreflight() toggles to `flex` carry
+         justify-center: in a flex box text-center does nothing. --}}
+    <div id="purchasePreflightModal" class="modal-overlay-alert z-[100] hidden">
+        <div class="modal-card-alert text-center animate-scaleUp">
+            <div id="preflight-icon"
+                class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
             </div>
-            <div class="flex justify-end gap-3 border-t bg-white px-6 py-4">
+            {{-- Both wordings are rendered here rather than written from JS,
+                 so every string still goes through __() and stays translated. --}}
+            {{-- Two headings, not spans in one heading: style.css forces every
+                 span to 12px at laptop widths, which shrank this title below
+                 every other confirm's. --}}
+            <h2 id="preflight-title-block" class="hidden justify-center text-2xl font-bold mb-3 text-gray-800">{{ __('Cannot post this purchase') }}</h2>
+            <h2 id="preflight-title-warn" class="hidden justify-center text-2xl font-bold mb-3 text-gray-800">{{ __('Check before posting') }}</h2>
+
+            <ul class="mb-3 space-y-1.5 text-sm">
+                <li id="preflight-warehouse" class="hidden items-start justify-center gap-2 text-rose-600">
+                    <i class="fa-solid fa-circle-xmark mt-0.5"></i>
+                    <span>{{ __('Warehouse not selected — required to receive stock.') }}</span>
+                </li>
+                <li id="preflight-vendor" class="hidden items-start justify-center gap-2 text-amber-600">
+                    <i class="fa-solid fa-circle-exclamation mt-0.5"></i>
+                    <span>{{ __('Vendor not selected — the purchase will be recorded without one.') }}</span>
+                </li>
+            </ul>
+
+            <p class="text-gray-600 mb-6">
+                <span id="preflight-hint-block" class="hidden justify-center">
+                    {{ __('Close this and choose a warehouse to receive the stock into.') }}
+                </span>
+                <span id="preflight-hint-warn" class="hidden justify-center">{{ __('Continue anyway?') }}</span>
+            </p>
+
+            <div class="flex justify-center space-x-4">
                 <button type="button" onclick="closePurchasePreflight()"
-                    class="rounded-xl bg-gray-200 px-4 py-2 font-medium text-gray-700 transition hover:bg-gray-300">
+                    class="px-5 py-2 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition">
                     {{ __('Cancel') }}
                 </button>
                 {{-- Hidden entirely when a warehouse is missing: there is nothing
-                     to continue to, so offering the button would only fail. --}}
+                     to continue to, so offering the button would only fail.
+                     No inline-flex here: the script adds `flex` when it shows it. --}}
                 <button type="button" id="preflight-continue" onclick="proceedPurchaseAnyway()"
-                    class="flex items-center gap-2 rounded-xl bg-green-600 px-4 py-2 font-medium text-white shadow-md transition hover:bg-green-700">
-                    <i class="fa-solid fa-check"></i>
-                    <span>{{ __('Continue') }}</span>
+                    class="px-5 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition items-center gap-2">
+                    <i class="fa-solid fa-check"></i> {{ __('Continue') }}
                 </button>
             </div>
         </div>
@@ -2277,4 +2411,30 @@
             }
         }
     </style>
+
+    {{-- Clear-cart confirmation. Replaces the double-click guard: a double-click
+         is invisible (nothing tells you it is required), easy to fire by accident
+         and easy to miss on a touch screen. A modal says plainly what is about to
+         happen and gives a way out. --}}
+    {{-- Standard confirm template — identical to the sale page's. --}}
+    <div id="clearCartConfirmModal" class="modal-overlay-alert z-[100] hidden">
+        <div class="modal-card-alert text-center animate-scaleUp">
+            <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-100 text-red-600">
+                <i class="fa-solid fa-trash-can text-2xl"></i>
+            </div>
+            <h2 class="text-2xl font-bold mb-3 text-gray-800">{{ __('Clear the cart?') }}</h2>
+            <p class="text-gray-600 mb-6">{{ __('Every line will be removed. This cannot be undone.') }}</p>
+            <div class="flex justify-center space-x-4">
+                <button type="button" onclick="closeClearCartConfirm()"
+                    class="px-5 py-2 bg-gray-200 text-gray-700 rounded-xl hover:bg-gray-300 transition">
+                    {{ __('Cancel') }}
+                </button>
+                <button type="button" onclick="confirmClearCart()"
+                    class="px-5 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 transition inline-flex items-center gap-2">
+                    <i class="fa-solid fa-trash-can"></i> {{ __('Clear cart') }}
+                </button>
+            </div>
+        </div>
+    </div>
+
 @endpush

@@ -193,6 +193,7 @@ class ProductController extends Controller
         // Upload image
         if ($request->hasFile('image')) {
             $data['image'] = $this->uploadFileToPublic($request, 'image', $request->name);
+            $this->makeThumbnail($data['image']);
         }
          $data['created_by'] = Auth::user()->username ?? 'System';
         Product::create($data);
@@ -246,6 +247,7 @@ class ProductController extends Controller
                 $filename = time() . '-' . ($request->code ?? 'product') . '.' . $file->getClientOriginalExtension();
 
                 $file->move(public_path($folder), $filename);
+                $this->makeThumbnail($filename);
 
                 $product->image = $filename;
             }

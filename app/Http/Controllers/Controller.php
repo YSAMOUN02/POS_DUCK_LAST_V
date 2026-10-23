@@ -31,4 +31,26 @@ abstract class Controller
 
         return null;
     }
+
+    /**
+     * Build the picker thumbnail for a just-uploaded image, so the product's
+     * tile is small from its first appearance instead of waiting for the lazy
+     * fill in ProductImages::url().
+     *
+     * A thumbnail is an optimisation. Whatever goes wrong here, the upload
+     * itself has already succeeded and must stay that way — the pickers simply
+     * fall back to the original until a thumbnail exists.
+     */
+    protected function makeThumbnail(?string $filename): void
+    {
+        if (! $filename) {
+            return;
+        }
+
+        try {
+            \App\Services\ProductImages::make($filename);
+        } catch (\Throwable $e) {
+            report($e);
+        }
+    }
 }

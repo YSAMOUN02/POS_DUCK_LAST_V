@@ -538,9 +538,9 @@ foreach ($cart as $__it) {
                                 {{-- stopPropagation so stepping does not also toggle the row --}}
                                 <div class="ci-qty-step" onclick="event.stopPropagation()">
                                     <button type="button" class="ci-step"
-                                        onclick="stepCartQty(this, -1)" aria-label="Decrease">-</button>
+                                        data-step="-1" aria-label="Decrease">-</button>
                                     <button type="button" class="ci-step"
-                                        onclick="stepCartQty(this, 1)" aria-label="Increase">+</button>
+                                        data-step="1" aria-label="Increase">+</button>
                                 </div>
                             </div>
                         </div>
@@ -759,8 +759,9 @@ foreach ($cart as $__it) {
                 </div>
 
                 <div class="mt-2 grid grid-cols-2 gap-2">
-                    <!-- Clear -->
-                    <button wire:click="clearCart"
+                    {{-- Same confirmation as the sale cart. This one used to wipe
+                         the cart on a single click with nothing asked. --}}
+                    <button type="button" onclick="openClearCartConfirm()" title="{{ __('Clear the cart') }}"
                         class="bg-red-500 hover:bg-red-600 text-white font-medium px-1 py-2 rounded-xl shadow-md transition">
                         <i class="fa-solid fa-trash-can mr-1"></i> Clear
                     </button>

@@ -3612,3 +3612,126 @@ select,
 textarea {
     border-radius: 4px !important;
 }
+
+/* ============================================================
+   MODAL HEADER — one look for every modal
+   The modal headers were written a dozen different ways: titles
+   from text-xs to text-xl, icons as a badge, inline in the title,
+   or missing. These rules make every modal-header-sale /
+   modal-header-purchase title render the same regardless of the
+   utility classes on it.
+   Here and not in resources/css/app.css on purpose: public/build
+   is not committed, so app.css only changes after a rebuild on the
+   host, while this file ships with a plain git pull.
+   Selector weight (one class + one element) beats a single
+   Tailwind utility, so no !important is needed.
+   ============================================================ */
+.modal-header-sale h2,
+.modal-header-sale h3,
+.modal-header-purchase h2,
+.modal-header-purchase h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    font-size: 1.125rem;
+    line-height: 1.5rem;
+    font-weight: 700;
+    color: #fff;
+}
+
+/* An icon written inline at the start of a title gets the same
+   rounded chip as .modal-icon-badge-*, so headers with and without
+   the badge markup look alike. Each icon keeps its own colour. */
+.modal-header-sale h2 > i:first-child,
+.modal-header-sale h3 > i:first-child,
+.modal-header-purchase h2 > i:first-child,
+.modal-header-purchase h3 > i:first-child {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.75rem;
+    background: rgb(255 255 255 / 0.1);
+    font-size: 0.95rem;
+}
+
+/* ============================================================
+   MODALS — let Tailwind's margin utilities work again
+   The universal reset near the top of this file (* { margin: 0 })
+   sits outside any cascade layer, and un-layered rules beat
+   Tailwind's @layer utilities whatever their specificity. Inside
+   every modal, mb-*, mt-*, mx-auto, space-y-* and space-x-* did
+   nothing: fields touching the next label, icons pinned left,
+   buttons touching.
+   revert-layer hands margins back to the layered rules — Tailwind
+   preflight zeroes them, the utilities set the intended ones.
+   :where() keeps this at ZERO specificity, so it only outranks the
+   equally weightless reset (by coming later) and never a margin set
+   on purpose by a class or element rule elsewhere in this file.
+   Scoped to modals: lifting the reset app-wide would re-space every
+   screen, all of which were laid out without these margins.
+   ============================================================ */
+:where(.modal-card-alert, .modal-card-sale, .modal-card-purchase),
+:where(.modal-card-alert, .modal-card-sale, .modal-card-purchase) :where(*) {
+    margin: revert-layer;
+}
+
+/* ============================================================
+   ITEM LEDGER — Cost Amount / Total Amount header highlight
+   "#Table-item-ledger-entry thead th" above paints every header
+   cell navy through an ID selector, which outranks the Tailwind
+   bg-amber-100 on these two columns — so only their amber side
+   rules ever showed. The same ID plus the class wins.
+   ============================================================ */
+#Table-item-ledger-entry thead th.bg-amber-100 {
+    background-color: #fef3c7;
+    color: #78350f;
+}
+
+/* ============================================================
+   TALL MODALS — centre when they fit, top-align when they do not
+   The overlay classes centre their card (sm:items-center). When a
+   form is taller than the window, plain `center` pushes the
+   overflow out of BOTH ends — and the part above the viewport can
+   never be scrolled to, so the header and close button vanished
+   (Edit User on a laptop screen). `safe center` falls back to the
+   top edge instead, and the overlay's own scroll reaches the rest.
+   Browsers without `safe` ignore this and keep plain centring.
+   ============================================================ */
+@media (min-width: 640px) {
+    .modal-overlay-sale,
+    .modal-overlay-sale-stacked,
+    .modal-overlay-sale-top,
+    .modal-overlay-purchase,
+    .modal-overlay-purchase-stacked,
+    .modal-overlay-alert {
+        align-items: safe center;
+    }
+}
+
+/* ============================================================
+   CART PANEL — fill the height, down to the Menu handle
+   The cart stopped at 80% of the screen (.screen-only: 80vh)
+   inside a panel that stopped at 90% (#inner-sidebar: 90vh, 88vh
+   on laptops), so the action buttons floated above a band of blank
+   white with leftover screen beneath.
+   The bottom 60px of the screen belongs to the fixed "Menu" drawer
+   handle (master.blade.php: bottom-[60px] + translate-y-full puts
+   exactly 60px of it on screen, at z-40), so the panel ends right
+   there and the cart fills the panel. Later in the file than the
+   90vh / 88vh rules, so this wins over their !important.
+   Side-panel layout only: below 1024px the cart is a slide-up
+   drawer with its own heights, left untouched.
+   ============================================================ */
+@media (min-width: 1024px) {
+    #inner-sidebar {
+        height: calc(100vh - 60px) !important;
+    }
+
+    #inner-sidebar .screen-only {
+        height: 100%;
+    }
+}

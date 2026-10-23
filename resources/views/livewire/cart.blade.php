@@ -499,6 +499,50 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
 /* ==========================================
                    LAPTOP 1000–1400px : compact cart
                    ========================================== */
+                /* Declared BEFORE the breakpoint below on purpose: a media query
+                   adds no specificity, so with these selectors repeated at equal
+                   weight the LAST one in the file wins. Sitting after it, this
+                   base rule silently overrode the laptop layout at every width. */
+                /* Currency | Customer, with Warehouse spanning both underneath —
+                   the layout this had as a flex row plus a separate block. */
+                /* 2:3 and both allowed to shrink. The controls still carry
+                   min-w-[180px] and sm:w-[300px] from when this row was flex,
+                   where they could shrink; grid cells do not, so in the 380px
+                   sidebar the customer box was drawn over the currency select.
+                   Neutralised here at every width, not only on laptops. */
+                .cart-fields {
+                    display: grid;
+                    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+                    align-items: end;
+                    gap: 8px;
+                }
+
+                .cart-fields > * {
+                    min-width: 0;
+                }
+
+                .cart-fields > #list_main {
+                    width: auto;
+                }
+
+                /* Expense mode has no customer box: the currency select takes
+                   the whole row instead of two-fifths of it beside nothing. */
+                .cart-fields:not(:has(> #list_main)) {
+                    grid-template-columns: minmax(0, 1fr);
+                }
+
+                .cart-field-wh {
+                    grid-column: 1 / -1;
+                    margin-top: 0;   /* the grid gap already spaces it */
+                }
+
+                /* Phones: the sidebar is full width, so three controls abreast
+                   would be unreadable. */
+                @media (max-width: 639px) {
+                    .cart-fields { grid-template-columns: 1fr; }
+                }
+
+
                 @media (min-width: 1000px) and (max-width: 1400px) {
 
                     .ci-header {
@@ -562,11 +606,23 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                         font-size: 11.5px;
                         border-radius: 10px;
                     }
-                    /* currency select + customer search: stack vertically */
-                    #total .w-full.flex.items-end.justify-between.gap-2 {
-                        flex-direction: column;
-                        align-items: stretch;
+                    /* Laptop: all three controls on ONE row instead of three
+                       stacked ones — the block was taller than the cart itself.
+                       The old rule here forced the opposite (flex-direction:
+                       column) and targeted classes this container no longer has. */
+                    /* One column per control actually present, not a fixed 3:
+                       a cashier with a single warehouse has no warehouse select,
+                       and expense mode has no customer box — repeat(3) left an
+                       empty third of the row for both. */
+                    .cart-fields {
+                        grid-template-columns: none;
+                        grid-auto-flow: column;
+                        grid-auto-columns: minmax(0, 1fr);
                         gap: 6px;
+                    }
+
+                    .cart-field-wh {
+                        grid-column: auto;
                     }
 
                     #total .relative.w-full.min-w-\[180px\] {
@@ -578,16 +634,36 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                         min-width: 0;
                     }
 
+                    /* The customer column is narrow here, so its results list
+                       spans the whole field row instead of wrapping every name
+                       over three lines. The user icon that static positioning
+                       would misplace is hidden at this size anyway. */
+                    #total .cart-fields {
+                        position: relative;
+                    }
+
+                    #total #list_main {
+                        position: static;
+                    }
+
                     #total #list_main input#customerSearch {
                         width: 100%;
                         height: 34px;
                         font-size: 12px;
                     }
 
-                    /* action buttons: 2 per row instead of 4 crushed */
+                    /* All four buttons on one row: at two per row the bar took
+                       two rows and pushed the whole footer past the fold. */
                     .cart-actions {
-                        grid-template-columns: repeat(2, 1fr);
-                        gap: 6px;
+                        grid-template-columns: repeat(4, 1fr);
+                        gap: 5px;
+                    }
+
+                    .cart-actions button {
+                        padding-left: 4px;
+                        padding-right: 4px;
+                        font-size: 11px;
+                        white-space: nowrap;
                     }
                     /* hide field icons, reclaim padding */
                     #total .fa-dollar-sign,
@@ -687,9 +763,30 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                 /* margin-top:auto consumes only space that is actually free, so
                    once the list is long enough to overflow, the summary returns
                    to its natural place and scrolls with the items. */
+                /* The summary — totals, rate, currency / customer / warehouse —
+                   is pinned to the bottom of the cart; only the lines scroll.
+                   margin-top:auto puts it there while the list is short, and
+                   sticky keeps it there once the list is long — before, a long
+                   cart scrolled the grand total out of sight. Opaque, so lines
+                   pass behind it rather than through it. */
                 #cartLines > #total {
                     margin-top: auto;
                     flex-shrink: 0;
+                    position: sticky;
+                    bottom: 0;
+                    z-index: 5;
+                    background: #fff;
+                    border-top: 1px solid var(--ci-border);
+                    box-shadow: 0 -10px 16px -14px oklch(0.3 0.02 95 / 0.45);
+                }
+
+                /* Customer results open UPWARD: the field sits at the bottom of
+                   the scroll area, and a 240px list opening downward ran past
+                   its edge and was clipped. */
+                #total #customerList {
+                    top: auto;
+                    bottom: 100%;
+                    margin: 0 0 4px;
                 }
 
             </style>
@@ -810,9 +907,9 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                                         {{-- stopPropagation so stepping does not also toggle the row --}}
                                         <div class="ci-qty-step" onclick="event.stopPropagation()">
                                             <button type="button" class="ci-step"
-                                                onclick="stepCartQty(this, -1)" aria-label="Decrease">-</button>
+                                                data-step="-1" aria-label="Decrease">-</button>
                                             <button type="button" class="ci-step"
-                                                onclick="stepCartQty(this, 1)" aria-label="Increase">+</button>
+                                                data-step="1" aria-label="Increase">+</button>
                                         </div>
                                     @endunless
                                 </div>
@@ -845,7 +942,8 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                                             <label class="ci-label">បញ្ចុះ · Disc %</label>
                                             <input type="number" min="0" max="100"
                                                 wire:key="discount-{{ $loop->index }}-{{ $this->cart[$loop->index]['discount_percent'] ?? 0 }}-{{ $this->inputNonce['discount_percent.' . $loop->index] ?? 0 }}"
-                                                value="{{ $item['discount_percent'] ?? 0 }}"
+                                                value="{{ ($item['discount_percent'] ?? 0) != 0 ? $item['discount_percent'] : '' }}"
+                                                placeholder="0"
                                                 wire:change="recalcLine({{ $loop->index }}, 'discount_percent', $event.target.value)"
                                                 @disabled(!($item['allow_discount'] ?? true))
                                                 title="{{ ($item['allow_discount'] ?? true) ? '' : 'ទំនិញនេះមិនអនុញ្ញាតឲ្យបញ្ចុះតម្លៃទេ · Discount not allowed for this item' }}"
@@ -1006,7 +1104,12 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                         @endif
 
                     </div>
-                    <div class="w-full flex  items-end justify-between gap-2">
+                    {{-- One grid for currency, customer and warehouse. It was a flex
+                         row with the warehouse as a separate block underneath, which
+                         cost three stacked rows on a laptop. As one grid the columns
+                         are set per breakpoint instead of being fought with
+                         flex-direction overrides. --}}
+                    <div class="w-full cart-fields">
                         <div class="relative w-full min-w-[180px]">
 
                             <!-- Icon -->
@@ -1033,7 +1136,10 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                         @if ($cart_mode == 'expence')
                         @else
                             {{-- fluid on phones, fixed once there's room for it --}}
-                            <div id="list_main" class="relative col-span-2 w-full sm:w-[300px]">
+                            {{-- col-span-2 dropped: it was inert while this container was a
+                                 flex row, but under the grid it made the customer box eat two
+                                 columns and shoved the warehouse onto its own row. --}}
+                            <div id="list_main" class="relative w-full sm:w-[300px]">
 
                                 <!-- Icon -->
                                 <i
@@ -1059,12 +1165,10 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
 
                             </div>
                         @endif
-                    </div>
-
                     {{-- Only shown when the user actually has a choice of sale warehouse.
                          Locks once the cart has lines: one document, one warehouse. --}}
                     @if (count($saleWarehouses) > 1)
-                        <div class="mt-3">
+                        <div class="mt-3 cart-field-wh">
                             <div class="relative">
                                 <i
                                     class="fa-solid fa-warehouse absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
@@ -1086,15 +1190,9 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
                                         class="fa-solid fa-lock absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-xs"></i>
                                 @endif
                             </div>
-                            <p class="mt-1 text-xs text-gray-500">
-                                @if ($this->saleWarehouseLocked)
-                                    {{ __('Locked while the cart has items. Clear the cart to change warehouse.') }}
-                                @else
-                                    {{ __('All items on this document are sold from one warehouse.') }}
-                                @endif
-                            </p>
                         </div>
                     @endif
+                    </div>
 
                 </div>
             </div>
@@ -1309,8 +1407,10 @@ $qtyFmt = fn($v) => rtrim(rtrim(number_format((float) $v, 6, '.', ''), '0'), '.'
 
 
 
-            <!-- Clear — double-click, same guard as removing a single line -->
-            <button wire:dblclick="clearCart" title="Double-click to clear the cart"
+            {{-- One click opens a confirmation. The double-click guard was
+                 undiscoverable — nothing on screen said a second click was
+                 needed — and on a touch screen it was awkward to land. --}}
+            <button type="button" onclick="openClearCartConfirm()" title="{{ __('Clear the cart') }}"
                 class="bg-red-500 hover:bg-red-600 text-white font-small px-4 py-2 rounded-xl shadow-md transition">
                 <i class="fa-solid fa-trash-can mr-1"></i> Clear
             </button>

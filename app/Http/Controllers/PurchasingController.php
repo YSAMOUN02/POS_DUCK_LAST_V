@@ -3,11 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Currency;
-use App\Models\InvoiceLine;
 use App\Models\PosProfile;
 use App\Models\Product;
 use App\Models\PurchaseHeader;
 use App\Models\UserWarehouse;
+use App\Services\ProductImages;
+use App\Services\RecentProducts;
 use Illuminate\Http\Request;
 
 use Illuminate\Support\Facades\Auth;
@@ -51,6 +52,8 @@ class PurchasingController extends Controller
             $product->total_stock = $product->warehouses->sum(function ($wh) {
                 return $wh->pivot->quantity ?? 0;
             });
+            // Small WebP for the picker tiles; null means "use the original".
+            $product->thumb = ProductImages::url($product->image);
         });
 
         // 3️⃣ Sort: in-stock first, then by name ascending
@@ -71,25 +74,10 @@ class PurchasingController extends Controller
                 $categories[$category][] = $product;
             }
         }
-            $byId = $products->keyBy('id');
 
-        $topSellerRows = InvoiceLine::query()
-            ->select('product_id')
-            ->selectRaw('SUM(quantity) as sold_qty')
-            ->whereNotNull('product_id')
-            // ->where('created_at', '>=', now()->subDays(90))  // ← uncomment for a rolling 90-day window
-            ->groupBy('product_id')
-            ->orderByDesc('sold_qty')
-            ->limit(60)                // buffer; some ids drop out below
-            ->get();
-
-        $top_products = [];
-        foreach ($topSellerRows as $row) {
-            $p = $byId->get($row->product_id);
-            if (!$p) continue;         // product inactive / filtered out for this role
-            $top_products[] = $p;
-            if (count($top_products) >= 30) break;
-        }
+        // "Recent" tab: most recently sold, in-stock first. Replaces the old
+        // all-time "Top Product" ranking. See the RecentProducts service.
+        $recent_products = RecentProducts::from($products);
         // 5️⃣ Currency
         $currency = Currency::where('code', '<>', 'USD')->get();
         $currency_default = Currency::where('is_default', 1)->first();
@@ -100,7 +88,7 @@ class PurchasingController extends Controller
         $posInfoForPrint = $posInfoForPrint ? $posInfoForPrint->toArray() : [];
         $posInfoForPrint['logo_url'] = \App\Http\Controllers\PosProfileController::logoUrl();
 
-        return view('backend.purchasing', compact('categories', 'currency', 'factor', 'currency_name', 'top_products', 'posInfoForPrint'));
+        return view('backend.purchasing', compact('categories', 'currency', 'factor', 'currency_name', 'recent_products', 'posInfoForPrint'));
     }
 
     public function search(Request $request)
@@ -135,6 +123,8 @@ class PurchasingController extends Controller
             $product->total_stock = $product->warehouses->sum(function ($wh) {
                 return $wh->pivot->quantity ?? 0;
             });
+            // Small WebP for the picker tiles; null means "use the original".
+            $product->thumb = ProductImages::url($product->image);
         });
 
         // 3️⃣ Sort: in-stock first, then by name ascending

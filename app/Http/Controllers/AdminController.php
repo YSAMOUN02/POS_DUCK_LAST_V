@@ -4,11 +4,12 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\Currency;
-use App\Models\InvoiceLine;
 use App\Models\PosProfile;
 use App\Models\Product;
 use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\ProductImages;
+use App\Services\RecentProducts;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use PHPUnit\Metadata\Test;
@@ -37,6 +38,8 @@ class AdminController extends Controller
             $product->total_stock = $product->warehouses->sum(function ($wh) {
                 return $wh->pivot->quantity ?? 0;
             });
+            // Small WebP for the picker tiles; null means "use the original".
+            $product->thumb = ProductImages::url($product->image);
         });
 
         // 3️⃣ Sort: in-stock first, then by name ascending
@@ -59,25 +62,10 @@ class AdminController extends Controller
         }
 
 
-        $byId = $products->keyBy('id');
 
-        $topSellerRows = InvoiceLine::query()
-            ->select('product_id')
-            ->selectRaw('SUM(quantity) as sold_qty')
-            ->whereNotNull('product_id')
-            // ->where('created_at', '>=', now()->subDays(90))  // ← uncomment for a rolling 90-day window
-            ->groupBy('product_id')
-            ->orderByDesc('sold_qty')
-            ->limit(60)                // buffer; some ids drop out below
-            ->get();
-
-        $top_products = [];
-        foreach ($topSellerRows as $row) {
-            $p = $byId->get($row->product_id);
-            if (!$p) continue;         // product inactive / filtered out for this role
-            $top_products[] = $p;
-            if (count($top_products) >= 30) break;
-        }
+        // "Recent" tab: most recently sold, in-stock first. Replaces the old
+        // all-time "Top Product" ranking. See the RecentProducts service.
+        $recent_products = RecentProducts::from($products);
 
 
         // 5️⃣ Currency
@@ -104,7 +92,7 @@ class AdminController extends Controller
         // never passed in, so that filter silently rendered zero options.
         $users = User::orderBy('username')->get(['id', 'username']);
 
-        return view('backend.pos', compact('categories', 'currency', 'factor', 'currency_name', 'top_products', 'posInfoForPrint', 'productViewMode', 'users'));
+        return view('backend.pos', compact('categories', 'currency', 'factor', 'currency_name', 'recent_products', 'posInfoForPrint', 'productViewMode', 'users'));
     }
 
 
@@ -127,6 +115,8 @@ class AdminController extends Controller
             $product->total_stock = $product->warehouses->sum(function ($wh) {
                 return $wh->pivot->quantity ?? 0;
             });
+            // Small WebP for the picker tiles; null means "use the original".
+            $product->thumb = ProductImages::url($product->image);
         });
 
         $products = $products->sort(function ($a, $b) {
@@ -153,6 +143,10 @@ class AdminController extends Controller
 
         return response()->json([
             'categories'    => $categories,
+            // Rebuilt on every refresh (including the one right after a sale),
+            // so the item just sold moves to the front without a page reload,
+            // and its stock is the same warehouse-scoped figure as the grid's.
+            'recent'        => RecentProducts::from($products),
             'factor'        => $currencyDefault ? $currencyDefault->factor : 1,
             'currency_name' => $currencyDefault ? $currencyDefault->code : 'USD',
         ]);

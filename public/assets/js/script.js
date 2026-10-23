@@ -2878,8 +2878,87 @@ const filters = [
     "category_filter",
     "sale_view_limit",
 ];
+/*
+|--------------------------------------------------------------------------
+| Sale report date presets
+|--------------------------------------------------------------------------
+| All dates are built from LOCAL calendar parts. toISOString() would be the
+| obvious shortcut, but it is UTC: in Cambodia (UTC+7) it reports yesterday's
+| date for anything before 7am, so "Today" would quietly load yesterday.
+*/
+function saleDateRange(key) {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const day = now.getDate();
+    const at = (yy, mm, dd) => new Date(yy, mm, dd); // overflow rolls over correctly
+
+    const today = at(y, m, day);
+    // Weeks run Monday–Sunday. getDay(): 0 = Sunday … 6 = Saturday.
+    const sinceMonday = (today.getDay() + 6) % 7;
+
+    switch (key) {
+        case "today":
+            return [today, today];
+        case "yesterday":
+            return [at(y, m, day - 1), at(y, m, day - 1)];
+        case "this_week":
+            return [at(y, m, day - sinceMonday), today];
+        case "last_week":
+            return [at(y, m, day - sinceMonday - 7), at(y, m, day - sinceMonday - 1)];
+        case "this_month":
+            return [at(y, m, 1), today];
+        case "last_month":
+            return [at(y, m - 1, 1), at(y, m, 0)]; // day 0 = last day of the previous month
+        case "last_6_months": {
+            // Same day six months back, clamped: 31 Aug -> 28/29 Feb, not 3 Mar.
+            const first = at(y, m - 6, 1);
+            const lastDay = at(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+            return [at(first.getFullYear(), first.getMonth(), Math.min(day, lastDay)), today];
+        }
+        case "this_year":
+            return [at(y, 0, 1), today];
+        case "last_year":
+            return [at(y - 1, 0, 1), at(y - 1, 11, 31)];
+        default:
+            return null; // "custom": leave whatever dates are set
+    }
+}
+
+function toLocalYmd(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function applySaleDatePreset(key) {
+    const range = saleDateRange(key);
+    if (!range) return;
+
+    const from = document.getElementById("from_date");
+    const to = document.getElementById("to_date");
+    if (!from || !to) return;
+
+    from.value = toLocalYmd(range[0]);
+    to.value = toLocalYmd(range[1]);
+    fetchSalesData(1);
+}
+
+document.getElementById("sale_date_preset")?.addEventListener("change", (e) => {
+    applySaleDatePreset(e.target.value);
+});
+
+// Editing a date by hand means the range is no longer the preset it came
+// from, so the preset drops back to "Custom" instead of claiming otherwise.
+// ("input" never fires for the programmatic sets above, so presets stick.)
+["from_date", "to_date"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", () => {
+        const preset = document.getElementById("sale_date_preset");
+        if (preset) preset.value = "";
+    });
+});
+
 function clear_filter_invoice() {
     const filters = [
+        "sale_date_preset",
         "from_date",
         "to_date",
         "invoice_paymentMethod",
@@ -3352,7 +3431,23 @@ async function fetchProducts(search = "") {
     }
 }
 
-function downloadSales() {
+/**
+ * Sale report → Excel, downloaded in place.
+ *
+ * This used window.open(..., "_blank"): every export left a blank tab behind,
+ * and while the workbook was being built there was no sign anything was
+ * happening, so people clicked again and got two files. Now the button shows a
+ * spinner, a second click is ignored until the first finishes, and the file is
+ * saved from this page.
+ */
+let salesExportInFlight = false;
+
+async function downloadSales() {
+    if (salesExportInFlight) return;
+
+    const btn = document.getElementById("downloadSales");
+    const label = (key, fallback) => btn?.dataset?.[key] || fallback;
+
     const params = new URLSearchParams({
         document:    document.getElementById("document_search_invoice")?.value || "",
         from_date:   document.getElementById("from_date")?.value || "",
@@ -3362,7 +3457,84 @@ function downloadSales() {
         product_id:  document.getElementById("ProductSearchInput_sale_invoice")?.value || "",
         category:    document.getElementById("category_filter")?.value || "",
     });
-    window.open("/sale-report/export-excel?" + params.toString(), "_blank");
+
+    salesExportInFlight = true;
+    const idleHtml = btn ? btn.innerHTML : "";
+    if (btn) {
+        btn.disabled = true;
+        btn.setAttribute("aria-busy", "true");
+        // Inline, not Tailwind disabled: utilities — those only exist once the
+        // CSS is rebuilt, and this has to look busy on the build already deployed.
+        btn.style.opacity = "0.7";
+        btn.style.cursor = "wait";
+        btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> ${label("loadingLabel", "Exporting…")}`;
+    }
+
+    try {
+        const res = await fetch("/sale-report/export-excel?" + params.toString(), {
+            credentials: "same-origin",
+        });
+
+        // Judge success by WHAT came back, not the status code: an expired
+        // session redirects to the login page, which fetch follows and returns
+        // as a 200 — saving that would hand the user a broken .xlsx.
+        const type = res.headers.get("Content-Type") || "";
+        if (!res.ok || !type.includes("spreadsheetml")) {
+            if (res.status === 403) throw new Error("forbidden");
+            if (res.redirected && /\/login\b/.test(res.url)) throw new Error("expired");
+            throw new Error("bad-response");
+        }
+
+        const blob = await res.blob();
+        const name = filenameFromDisposition(res.headers.get("Content-Disposition")) || "sales-report.xlsx";
+        saveBlobAs(blob, name);
+    } catch (err) {
+        console.error("Sale export failed:", err);
+        const message =
+            err.message === "forbidden" ? label("forbiddenLabel", "You don't have permission to export.") :
+            err.message === "expired"   ? label("expiredLabel", "Your session has expired. Reload the page and try again.") :
+                                          label("errorLabel", "Export failed. Please try again.");
+        showToast({ message, type: "error" });
+    } finally {
+        salesExportInFlight = false;
+        if (btn) {
+            btn.disabled = false;
+            btn.removeAttribute("aria-busy");
+            btn.style.opacity = "";
+            btn.style.cursor = "";
+            btn.innerHTML = idleHtml;
+        }
+    }
+}
+
+/** File name from a Content-Disposition header (RFC 6266 filename* first). */
+function filenameFromDisposition(header) {
+    if (!header) return "";
+
+    const star = /filename\*\s*=\s*(?:UTF-8'[^']*')?([^;]+)/i.exec(header);
+    if (star) {
+        try {
+            return decodeURIComponent(star[1].trim().replace(/^"|"$/g, ""));
+        } catch (e) { /* malformed encoding — fall through to the plain form */ }
+    }
+
+    const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header);
+    return plain ? plain[1].trim() : "";
+}
+
+/** Save a Blob through a temporary link — no new tab, no navigation. */
+function saveBlobAs(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // Revoked on a delay: revoking straight away can cancel the download
+    // before the browser has started reading the blob.
+    setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
 document
