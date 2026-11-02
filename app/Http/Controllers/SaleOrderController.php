@@ -858,9 +858,10 @@ public function getSaleOrders(Request $request)
      * scope is applied server-side and no id comes from the request, so the
      * caller cannot widen it.
      *
-     * Payment fields only. Status and stock are deliberately untouched: being
-     * paid for is not the same as having shipped, and an Ordered document must
-     * not become Completed without stock moving.
+     * Stock is deliberately untouched: being paid for is not the same as having
+     * shipped, so an Ordered document stays Ordered. A Deposit document already
+     * shipped (stock + invoice exist), so once fully paid it closes to
+     * Completed — the same transition a normal payment makes in the cart.
      */
     public function markAllPaid(Request $request)
     {
@@ -873,11 +874,16 @@ public function getSaleOrders(Request $request)
 
         // Closed documents, and quotations (which carry no balance), stay as
         // they are. Anything already Paid or N/A is skipped so the count
-        // reported back is what actually changed.
+        // reported back is what actually changed — except a Deposit that is
+        // already Paid: earlier versions of this action left those stuck on
+        // Deposit ("Pending"), so they are picked up here to be closed out.
         $query->whereNotIn('status', ['Cancelled', 'Returned', 'Quotation'])
             ->where(function ($q) {
                 $q->whereNull('payment_status')
-                    ->orWhereNotIn('payment_status', ['Paid', 'N/A']);
+                    ->orWhereNotIn('payment_status', ['Paid', 'N/A'])
+                    ->orWhere(function ($q) {
+                        $q->where('status', 'Deposit')->where('payment_status', 'Paid');
+                    });
             });
 
         // Counted before the write so the response can state exactly what
@@ -895,13 +901,14 @@ public function getSaleOrders(Request $request)
         }
 
         // GREATEST keeps an overpayment intact rather than clawing it back to
-        // grand_total. Payment fields only: status and stock are untouched,
-        // because being paid is not the same as having shipped.
+        // grand_total. Deposit → Completed mirrors the cart's payment flow;
+        // Ordered keeps its status because its stock has not moved yet.
         $query->update([
             'paid_amount'    => DB::raw('GREATEST(COALESCE(paid_amount,0), COALESCE(grand_total,0))'),
             'deposit_amount' => DB::raw('GREATEST(COALESCE(deposit_amount,0), COALESCE(grand_total,0))'),
             'balance_amount' => 0,
             'payment_status' => 'Paid',
+            'status'         => DB::raw("CASE WHEN status = 'Deposit' THEN 'Completed' ELSE status END"),
             'updated_at'     => now(),
         ]);
 
