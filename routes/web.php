@@ -34,9 +34,13 @@ Route::get('/locale/{locale}', [App\Http\Controllers\LocaleController::class, 's
 
 
 Route::middleware(['auth'])->group(function () {
+    // Admin only: the token unlocks the /api export endpoints, which return
+    // every sale order and the whole item ledger (costs, customers) with no
+    // per-user or per-warehouse scoping. Any logged-in cashier could mint one.
     Route::get('/generate-token', function () {
 
         $user = Auth::user();
+        abort_unless($user->role === 'admin', 403);
 
         return $user->createToken('excel')->plainTextToken;
     });

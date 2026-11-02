@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Concerns\ResolvesPrintProfile;
+use App\Concerns\ScopesVisibilityByRole;
 use App\Models\Currency;
 use App\Models\Customer;
 use App\Models\Expense;
@@ -31,6 +32,26 @@ use Livewire\Component;
 class Cart extends Component
 {
     use ResolvesPrintProfile;
+    use ScopesVisibilityByRole;
+
+    /**
+     * Same visibility rule as the sale order list, for an order picked by id.
+     *
+     * The list is scoped, but loading an order into the cart took any id the
+     * browser sent — and the loaded id is what Pay / Ship / Sale Return then
+     * act on, so the #[Locked] document_id was only as safe as this load.
+     * Returns false rather than throwing, so callers can show a message
+     * instead of a bare 403 page.
+     */
+    private function canAccessSaleOrder(SaleOrderHeader $saleOrder): bool
+    {
+        try {
+            $this->authorizeDocumentAccess($saleOrder, 'created_user_id', ['document_no', 'source_no']);
+            return true;
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            return false;
+        }
+    }
 
 
 
@@ -123,7 +144,7 @@ class Cart extends Component
                 'expire' => $wp->expire
                     ? \Carbon\Carbon::parse($wp->expire)->format('d-M-Y')
                     : '-',
-                'stock' => $wp->qty ?? 0,
+                'stock' => $wp->quantity ?? 0,
 
                 // ✅ ADD THIS
                 'warehouse' => $wp?->warehouse?->name ?? 'NA',
@@ -1577,17 +1598,27 @@ class Cart extends Component
                     $finalStatus = 'Quotation';
                     $delivery = 'N/A';
                 } else {
+                    // Still Ordered either way — no stock has moved yet. A
+                    // deposit that covers the whole order is Paid, not Partial:
+                    // it used to read "Partial" with $0 remaining, and the row
+                    // menu then offered "Ship & Pay" instead of "Ship".
+                    $finalStatus = 'Ordered';
                     if ($deposit <= 0) {
                         $paymentStatus = 'Unpaid';
-                        $finalStatus = 'Ordered';
+                    } elseif ($this->isSettled($deposit, $grandTotal)) {
+                        $paymentStatus = 'Paid';
+                        // Absorb the sub-note rounding dust, as the other
+                        // payment paths do, so no phantom cent stays owed.
+                        $deposit = max($deposit, $grandTotal);
                     } else {
                         $paymentStatus = 'Partial';
-                        $finalStatus = 'Ordered';
                     }
 
+                    // 'N/A' is the enum value — 'NA' is not in delivery_status,
+                    // so MySQL stored it as an empty string.
                     $delivery = $payload['delivery_status'] ?? 'N/A';
                     if ($delivery == '') {
-                        $delivery = 'NA';
+                        $delivery = 'N/A';
                     }
                 }
 
@@ -1646,15 +1677,21 @@ class Cart extends Component
             },
         ])->find($saleOrderId);
 
-        $posInfo = $this->saleDocProfile($saleOrder);
-
-
         if (!$saleOrder) {
             $this->dispatch('app-error', [
                 'message' => 'Sale order not found'
             ]);
             return;
         }
+
+        if (!$this->canAccessSaleOrder($saleOrder)) {
+            $this->dispatch('app-error', [
+                'message' => 'You do not have access to this sale order.'
+            ]);
+            return;
+        }
+
+        $posInfo = $this->saleDocProfile($saleOrder);
 
         $this->factor = $saleOrder->factor;
         $this->currency = $saleOrder->currency_name;
@@ -1697,8 +1734,11 @@ class Cart extends Component
             $discountPercent = (float) ($line->discount_percent ?? $product?->discount_percent ?? 0);
             $vat = (float) ($line->vat ?? $product?->vat ?? 0);
 
+            // The pivot column is `quantity` (Product::warehouses withPivot).
+            // Reading `qty` always gave 0, so every loaded Ordered line showed
+            // "ស្តុកមិនគ្រប់" (not enough stock) and its qty input max was 0.
             $stock = $product?->warehouses?->sum(function ($wh) {
-                return (float) ($wh->pivot->qty ?? 0);
+                return (float) ($wh->pivot->quantity ?? 0);
             }) ?? 0;
 
             $discountAmount = ($price * $discountPercent) / 100;
@@ -1752,16 +1792,26 @@ class Cart extends Component
             },
         ])->find($saleOrderId);
 
-        $posInfo = $this->saleDocProfile($saleOrder);
-
-        $this->deposit = $saleOrder->paid_amount;
-        $this->balanceAmount_display = $saleOrder->balance_amount;
+        // Checked before anything reads from it: paid_amount used to be read
+        // first, so a missing order threw instead of showing this message.
         if (!$saleOrder) {
             $this->dispatch('app-error', [
                 'message' => 'Sale order not found'
             ]);
             return;
         }
+
+        if (!$this->canAccessSaleOrder($saleOrder)) {
+            $this->dispatch('app-error', [
+                'message' => 'You do not have access to this sale order.'
+            ]);
+            return;
+        }
+
+        $posInfo = $this->saleDocProfile($saleOrder);
+
+        $this->deposit = $saleOrder->paid_amount;
+        $this->balanceAmount_display = $saleOrder->balance_amount;
 
 
         $this->factor = $saleOrder->factor;
@@ -1792,7 +1842,7 @@ class Cart extends Component
             $vat = (float) ($line->vat ?? 0);
 
             $stock = $product?->warehouses?->sum(function ($wh) {
-                return (float) ($wh->pivot->qty ?? 0);
+                return (float) ($wh->pivot->quantity ?? 0);
             }) ?? 0;
 
             $discountAmount = ($price * $discountPercent) / 100;
@@ -2733,6 +2783,12 @@ class Cart extends Component
 
             if (!$saleOrder) {
                 throw new \Exception('Sale order not found');
+            }
+
+            // The document number is typed in, so without this any cashier
+            // could return — and put back into stock — another user's sale.
+            if (!$this->canAccessSaleOrder($saleOrder)) {
+                throw new \Exception('You do not have access to this sale order.');
             }
 
             $invoiceLines = InvoiceLine::where('sale_invoice_id', $invoice->id)->get();

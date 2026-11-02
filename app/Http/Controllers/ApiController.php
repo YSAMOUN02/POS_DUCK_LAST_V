@@ -8,8 +8,20 @@ use Illuminate\Http\Request;
 
 class ApiController extends Controller
 {
+    /**
+     * These exports are unscoped (every warehouse, every user's documents), so
+     * only an admin's token may read them. Tokens minted by non-admins before
+     * /generate-token was restricted would otherwise keep working.
+     */
+    private function requireAdmin(): void
+    {
+        abort_unless(auth()->user()?->role === 'admin', 403);
+    }
+
     public function api_get_item_ledger_entry_by_year($year)
     {
+        $this->requireAdmin();
+
         try {
 
             if ($year === 'all') {
@@ -42,6 +54,8 @@ class ApiController extends Controller
     }
         public function api_get_sale_order_by_year($year)
         {
+            $this->requireAdmin();
+
             $query = SaleOrderHeader::with('lines');
         
             if ($year !== 'all') {

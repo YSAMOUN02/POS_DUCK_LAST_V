@@ -105,14 +105,6 @@ document.getElementById("btnEditCustomer").addEventListener("click", () => {
     openUpdateCustModal();
 });
 
-function getSelectedCustomerId() {
-    const selected = document.querySelector(
-        'input[name="customer_id"]:checked',
-    );
-    selectedCustomerId = selected ? selected.value : null;
-    return selectedCustomerId;
-}
-
 // EDIT BUTTON
 const btnEditCustomer = document.getElementById("btnEditCustomer");
 
@@ -6969,13 +6961,13 @@ async function cancelSelectedSaleOrder(id) {
             body: JSON.stringify({ sale_order_id: id, status: "Cancelled" }),
         });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.success) throw new Error(data.message || res.status);
+        if (!res.ok || !data.success) throw new Error(data.message || "Failed to cancel order");
 
         showToast({ message: "Order cancelled", type: "success" });
         loadSaleOrders(1);
     } catch (err) {
         console.error(err);
-        showToast({ message: "Failed to cancel order", type: "error" });
+        showToast({ message: err.message || "Failed to cancel order", type: "error" });
     }
 }
 

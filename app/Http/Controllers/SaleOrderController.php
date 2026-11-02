@@ -242,9 +242,14 @@ public function getSaleOrders(Request $request)
     public function updateStatus(Request $request)
     {
         try {
+            // Cancel is the only transition this endpoint makes. Every other
+            // status change moves stock or money and has its own flow in the
+            // cart (Ship, Pay, Sale Return) — accepting them here let a direct
+            // POST mark an Ordered order Completed without stock leaving, or a
+            // shipped order Returned without stock coming back.
             $request->validate([
                 'sale_order_id' => 'required|integer|exists:sale_order_headers,id',
-                'status' => 'required|string|in:Quotation,Ordered,Deposit,Completed,Cancelled,Returned',
+                'status' => 'required|string|in:Cancelled',
             ]);
 
             $saleOrder = SaleOrderHeader::findOrFail($request->sale_order_id);
@@ -252,26 +257,29 @@ public function getSaleOrders(Request $request)
             // mark returned any order in the system.
             $this->authorizeDocumentAccess($saleOrder, 'created_user_id', ['document_no', 'source_no']);
 
+            // Cancelling only relabels the order; it does not reverse stock or
+            // the invoice. A Deposit/Completed order has already shipped, so it
+            // must go through Sale Return instead — the row menu only offers
+            // Cancel for these two statuses, and the server now agrees.
+            if (!in_array($saleOrder->status, ['Ordered', 'Quotation'], true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "This order is {$saleOrder->status} — only Ordered or Quotation orders can be cancelled. Use Sale Return for shipped orders.",
+                ], 422);
+            }
+
             $updateData = [
                 'status' => $request->status,
                 'updated_by' => Auth::user()->username ?? 'System',
             ];
 
-            // Cancelled and Returned both close the order out, so nothing is
-            // still collectable on it. Without zeroing the balance the list kept
+            // Cancelling closes the order out, so nothing is still collectable
+            // on it. Without zeroing the balance the list kept
             // showing an outstanding amount against an order nobody will ever
             // pay — and it counted toward receivables.
-            if ($request->status === 'Cancelled') {
-                $updateData['payment_status'] = 'N/A';
-                $updateData['delivery_status'] = 'N/A';
-                $updateData['balance_amount'] = 0;
-            }
-
-            if ($request->status === 'Returned') {
-                $updateData['payment_status'] = 'Refunded';
-                $updateData['delivery_status'] = 'Returned';
-                $updateData['balance_amount'] = 0;
-            }
+            $updateData['payment_status'] = 'N/A';
+            $updateData['delivery_status'] = 'N/A';
+            $updateData['balance_amount'] = 0;
 
             $saleOrder->update($updateData);
 
